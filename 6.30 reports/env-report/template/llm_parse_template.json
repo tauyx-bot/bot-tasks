@@ -1,0 +1,44 @@
+{
+  "header": {
+    "unit_name": "",
+    "contact": "",
+    "address": "",
+    "detection_type": ""
+  },
+  "survey_tables": {
+    "basic_info": [],
+    "materials": [],
+    "products": [],
+    "equipment": [],
+    "protection_facilities": [],
+    "ppe": [],
+    "overall_exposure": [],
+    "detail_exposure": [],
+    "attachments": []
+  },
+  "projects": [],
+  "table3": [
+    {
+      "sampling_no": "",
+      "workplace": "",
+      "position": "",
+      "people_per_shift": "",
+      "job_type": "",
+      "target": "",
+      "project": "",
+      "limit_type": "",
+      "exposure_type": "",
+      "sampling_mode": "",
+      "time_type": "",
+      "collector": "",
+      "device": "",
+      "flow_rate": "",
+      "points_per_day": "",
+      "times_per_day": "",
+      "days": "",
+      "sampling_time": "",
+      "representative_time": ""
+    }
+  ],
+  "missing_fields": []
+}

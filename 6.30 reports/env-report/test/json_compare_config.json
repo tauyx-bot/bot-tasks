@@ -1,0 +1,8 @@
+{
+  "global_ignore_paths": [
+    "survey_tables"
+  ],
+  "sort_list_paths": [
+    "missing_fields"
+  ]
+}

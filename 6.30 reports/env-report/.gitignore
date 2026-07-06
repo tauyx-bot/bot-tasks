@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+
+test/results/
+*.result.json
+*.result.docx
+
+template/~$*.docx
+
+*.zip
