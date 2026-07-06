@@ -12,6 +12,13 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from scripts.generate_report import build_table3, load_collector_index
+
+
 def load_config(path: Path) -> Dict[str, List[str]]:
     if not path.exists():
         return {"global_ignore_paths": [], "sort_list_paths": []}
@@ -105,6 +112,46 @@ def run_example(
             raise RuntimeError(result.stderr.strip() or f"generate_report failed for {pdf_path.name}")
 
 
+def test_table3_project_merge() -> None:
+    collector_index = load_collector_index(ROOT_DIR / "knowledge" / "collector.json")
+    rows = [
+        {
+            "workplace": "A车间",
+            "position": "岗位1",
+            "people_per_shift": "1",
+            "job_type": "固定作业",
+            "target": "点位1",
+            "project": "甲苯",
+            "exposure_type": "①",
+        },
+        {
+            "workplace": "A车间",
+            "position": "岗位1",
+            "people_per_shift": "1",
+            "job_type": "固定作业",
+            "target": "点位1",
+            "project": "乙酸甲酯",
+            "exposure_type": "①",
+        },
+        {
+            "workplace": "A车间",
+            "position": "岗位1",
+            "people_per_shift": "1",
+            "job_type": "固定作业",
+            "target": "点位1",
+            "project": "二氯甲烷",
+            "exposure_type": "①",
+        },
+    ]
+
+    merged, missing = build_table3(rows, collector_index)
+
+    assert missing == []
+    assert len(merged) == 2
+    assert any(row["project"] == "甲苯、乙酸甲酯" and row["collector"] == "" for row in merged)
+    assert any(row["project"] == "二氯甲烷" and row["collector"] == "采气袋" for row in merged)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     test_dir = Path(__file__).resolve().parent
@@ -119,6 +166,7 @@ def main() -> int:
     args = parser.parse_args()
 
     script = root_dir / "scripts" / "generate_report.py"
+    test_table3_project_merge()
     config = load_config(args.config)
     ignore_paths = set(config["global_ignore_paths"])
     sort_list_paths = set(config["sort_list_paths"])

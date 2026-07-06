@@ -88,11 +88,37 @@ def load_payload(path: Path) -> Dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def set_paragraph_text(paragraph, text: str) -> None:
+    text = text or ""
+    if paragraph.runs:
+        paragraph.runs[0].text = text
+        for run in paragraph.runs[1:]:
+            run.text = ""
+    else:
+        paragraph.add_run(text)
+
+
+def format_detection_type(value: str) -> str:
+    options = ["委托检测", "定期检测", "评价检测"]
+    normalized = (value or "").strip()
+    parts = []
+    for option in options:
+        mark = "☑" if option == normalized else "□"
+        parts.append(f"{mark}{option}")
+    return "  ".join(parts)
+
+
+def write_doc_meta(doc, header: Dict[str, str]) -> None:
+    if len(doc.paragraphs) > 1:
+        set_paragraph_text(doc.paragraphs[1], f"检测任务编号：{header.get('detection_task_no', '')}")
+
+
 def write_header(table, header: Dict[str, str]) -> None:
     mapping: List[Tuple[Tuple[int, int], str]] = [
         ((0, 1), header.get("unit_name", "")),
-        ((0, 3), header.get("contact", "")),
+        ((0, 5), header.get("contact", "")),
         ((1, 1), header.get("address", "")),
+        ((1, 5), format_detection_type(header.get("detection_type", ""))),
     ]
     for (row_idx, cell_idx), value in mapping:
         set_cell_text(table.rows[row_idx].cells[cell_idx], value)
@@ -110,6 +136,28 @@ def write_table2(table, rows: List[Dict[str, str]]) -> None:
         set_cell_text(target.cells[2], row.get("样品保存条件和期限", ""))
 
 
+def merge_vertical_same_value_cells(table, start_row: int, end_row: int, column_idx: int) -> None:
+    if end_row <= start_row:
+        return
+
+    group_start = start_row
+    current_value = table.rows[start_row].cells[column_idx].text.strip()
+
+    for row_idx in range(start_row + 1, end_row + 1):
+        row_value = table.rows[row_idx].cells[column_idx].text.strip()
+        if row_value == current_value:
+            continue
+        if current_value and group_start < row_idx - 1:
+            merged_cell = table.cell(group_start, column_idx).merge(table.cell(row_idx - 1, column_idx))
+            set_cell_text(merged_cell, current_value)
+        group_start = row_idx
+        current_value = row_value
+
+    if current_value and group_start < end_row:
+        merged_cell = table.cell(group_start, column_idx).merge(table.cell(end_row, column_idx))
+        set_cell_text(merged_cell, current_value)
+
+
 def write_table3(table, rows: List[Dict[str, str]]) -> None:
     start_row = 1
     template_row = 1
@@ -119,6 +167,10 @@ def write_table3(table, rows: List[Dict[str, str]]) -> None:
         target = table.rows[start_row + offset]
         for idx, key in enumerate(TABLE3_KEYS):
             set_cell_text(target.cells[idx], row.get(key, ""))
+    if rows:
+        end_row = start_row + len(rows) - 1
+        merge_vertical_same_value_cells(table, start_row, end_row, 1)
+        merge_vertical_same_value_cells(table, start_row, end_row, 2)
 
 
 def main() -> int:
@@ -141,6 +193,7 @@ def main() -> int:
         print("template does not contain the expected 3 tables", file=sys.stderr)
         return 1
 
+    write_doc_meta(doc, payload.get("header", {}))
     write_header(tables[0], payload.get("header", {}))
     write_table2(tables[1], payload.get("table2", []))
     write_table3(tables[2], payload.get("table3", []))

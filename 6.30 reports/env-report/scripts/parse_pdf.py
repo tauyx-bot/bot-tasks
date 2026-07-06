@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 
-HEADER_KEYS = ["unit_name", "contact", "address", "detection_type"]
+HEADER_KEYS = ["detection_task_no", "unit_name", "contact", "address", "detection_type"]
 SURVEY_TABLE_KEYS = [
     "basic_info",
     "materials",
@@ -91,9 +91,9 @@ def read_pdf_tables(path: Path) -> tuple[str, List[List[List[str]]]]:
     return "\n".join(full_text_parts), raw_tables
 
 
-def extract_header(full_text: str, raw_tables: List[List[List[str]]]) -> Dict[str, str]:
+def extract_field_map(raw_tables: List[List[List[str]]]) -> Dict[str, str]:
     field_map: Dict[str, str] = {}
-    for table in raw_tables[:2]:
+    for table in raw_tables:
         for row in table:
             if len(row) < 2:
                 continue
@@ -102,7 +102,22 @@ def extract_header(full_text: str, raw_tables: List[List[List[str]]]) -> Dict[st
                 value = normalize_text(row[index + 1])
                 if label and value and label not in field_map:
                     field_map[label] = value
+    return field_map
 
+
+def extract_table1_title(raw_tables: List[List[List[str]]]) -> str:
+    if not raw_tables:
+        return ""
+    for row in raw_tables[0][:3]:
+        joined = "".join(row)
+        if "职业卫生现场调查记录表" in joined:
+            return joined
+    return ""
+
+
+def extract_header(full_text: str, raw_tables: List[List[List[str]]]) -> Dict[str, str]:
+    field_map = extract_field_map(raw_tables)
+    title_text = normalize_text(extract_table1_title(raw_tables))
     compact = re.sub(r"\s+", " ", full_text)
 
     def search(pattern: str) -> str:
@@ -111,15 +126,27 @@ def extract_header(full_text: str, raw_tables: List[List[List[str]]]) -> Dict[st
             return ""
         return normalize_text(match.group(1))
 
+    def search_title(pattern: str) -> str:
+        match = re.search(pattern, title_text)
+        if not match:
+            return ""
+        return normalize_text(match.group(1))
+
+    detection_task_no = search_title(r"检测任务编号(.+?)调查日期") or search(r"检测任务编号\s+(.+?)\s+调查日期")
     unit_name = field_map.get("用人单位") or search(r"用人单位\s+(.+?)\s+统一社会信用代码")
     service_address = field_map.get("技术服务地址（多个地址应逐一详细填写）")
     register_address = field_map.get("单位注册地址") or search(r"单位注册地址\s+(.+?)\s+技术服务地址")
     contact_name = field_map.get("职业卫生管理联系人") or search(r"职业卫生管理联系人\s+(.+?)\s+联系人电话")
     contact_phone = field_map.get("联系人电话") or search(r"联系人电话\s+(.+?)\s+联系人邮箱")
-    detection_type = field_map.get("检测类型") or search(r"检测类型\s+(.+?)\s+是否存在射线装置")
+    detection_type = (
+        field_map.get("检测类型")
+        or search_title(r"职业卫生现场调查记录表[（(](.+?)[）)]")
+        or search(r"检测类型\s+(.+?)\s+是否存在射线装置")
+    )
 
     contact = " ".join(part for part in (contact_name, contact_phone) if part).strip()
     return {
+        "detection_task_no": detection_task_no,
         "unit_name": unit_name,
         "contact": contact,
         "address": service_address or register_address,
@@ -322,12 +349,15 @@ def make_table3_row(
 
 def build_table3(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     rows: List[Dict[str, str]] = []
+    matched_overall_rows: set[int] = set()
     if detail_rows:
         for detail_row in detail_rows:
             projects = split_projects(detail_row.get("project_raw", ""))
             if not projects:
                 continue
             overall_row = match_overall_row(detail_row, overall_rows) or {}
+            if overall_row in overall_rows:
+                matched_overall_rows.add(overall_rows.index(overall_row))
             people_per_shift = overall_row.get("people_per_shift", "")
             overall_job_type = overall_row.get("job_type", "")
             exposure_type = overall_row.get("exposure_type", "")
@@ -348,10 +378,9 @@ def build_table3(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str,
                         representative_time=detail_row.get("duration", ""),
                     )
                 )
-        if rows:
-            return rows
-
-    for overall_row in overall_rows:
+    for index, overall_row in enumerate(overall_rows):
+        if index in matched_overall_rows and overall_row.get("exposure_type", "") == "②":
+            continue
         projects = split_projects(overall_row.get("project_raw", ""))
         for project in projects:
             rows.append(

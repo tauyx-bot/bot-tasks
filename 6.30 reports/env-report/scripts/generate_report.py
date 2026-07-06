@@ -36,6 +36,22 @@ def load_rule_index(index_path: Path) -> Dict[str, Dict[str, str]]:
     return index
 
 
+def load_collector_index(index_path: Path) -> Dict[str, str]:
+    if not index_path.exists():
+        raise RuntimeError(f"collector data file not found: {index_path}")
+    data = json.loads(index_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise RuntimeError("collector data file must be a JSON object")
+
+    index: Dict[str, str] = {}
+    for name, collector in data.items():
+        normalized_name = normalize_lookup(name)
+        normalized_collector = "" if collector is None else str(collector).strip()
+        if normalized_name and normalized_collector:
+            index[normalized_name] = normalized_collector
+    return index
+
+
 def run_parse_script(script: Path, pdf: Path, output: Path) -> None:
     result = subprocess.run(
         [sys.executable, str(script), "--pdf", str(pdf), "--output", str(output)],
@@ -89,7 +105,54 @@ def build_table2(
     return rows, missing
 
 
-def build_table3(rows: List[Dict[str, str]]) -> Tuple[List[Dict[str, str]], List[str]]:
+def merge_projects_by_collector(
+    rows: List[Dict[str, str]],
+    collector_index: Dict[str, str],
+    table3_keys: Tuple[str, ...],
+) -> List[Dict[str, str]]:
+    merged: List[Dict[str, str]] = []
+    grouped: Dict[Tuple[str, ...], Dict[str, str]] = {}
+    project_orders: Dict[Tuple[str, ...], List[str]] = {}
+
+    for row in rows:
+        filled = {key: row.get(key, "") for key in table3_keys}
+        project = filled.get("project", "")
+        collector = collector_index.get(normalize_lookup(project), "")
+        filled["collector"] = collector
+
+        group_key = tuple(
+            filled[key]
+            for key in table3_keys
+            if key not in {"project"}
+        )
+        if group_key not in grouped:
+            grouped[group_key] = filled
+            project_orders[group_key] = []
+            merged.append(grouped[group_key])
+
+        if project and project not in project_orders[group_key]:
+            project_orders[group_key].append(project)
+
+    for group_key, target in grouped.items():
+        target["project"] = "、".join(project_orders[group_key])
+    return merged
+
+
+def sort_table3_rows(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    return sorted(
+        rows,
+        key=lambda row: (
+            row.get("workplace", ""),
+            row.get("position", ""),
+            row.get("target", ""),
+            row.get("job_type", ""),
+            row.get("project", ""),
+            row.get("collector", ""),
+        ),
+    )
+
+
+def build_table3(rows: List[Dict[str, str]], collector_index: Dict[str, str]) -> Tuple[List[Dict[str, str]], List[str]]:
     output: List[Dict[str, str]] = []
     missing: List[str] = []
     table3_keys = (
@@ -113,8 +176,10 @@ def build_table3(rows: List[Dict[str, str]]) -> Tuple[List[Dict[str, str]], List
         "sampling_time",
         "representative_time",
     )
-    for row in rows:
-        filled = {key: row.get(key, "") for key in table3_keys}
+
+    merged_rows = sort_table3_rows(merge_projects_by_collector(rows, collector_index, table3_keys))
+    for index, filled in enumerate(merged_rows, start=1):
+        filled["sampling_no"] = str(index)
         project = filled.get("project", "") or "未命名项目"
         for key in ("workplace", "position", "target", "project"):
             if not filled.get(key):
@@ -153,8 +218,10 @@ def main() -> int:
     args = parser.parse_args()
 
     scripts_dir = Path(__file__).resolve().parent
+    root_dir = scripts_dir.parent
     parse_script = scripts_dir / "parse_pdf.py"
     fill_script = scripts_dir / "fill_docx.py"
+    collector_path = root_dir / "knowledge" / "collector.json"
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -163,12 +230,13 @@ def main() -> int:
             run_parse_script(parse_script, args.pdf, raw_payload_path)
             parsed = json.loads(raw_payload_path.read_text(encoding="utf-8"))
             rule_index = load_rule_index(args.rules)
+            collector_index = load_collector_index(collector_path)
             table2, missing2 = build_table2(
                 parsed.get("projects", []),
                 parsed.get("table3", []),
                 rule_index,
             )
-            table3, missing3 = build_table3(parsed.get("table3", []))
+            table3, missing3 = build_table3(parsed.get("table3", []), collector_index)
             missing_fields = dedupe(parsed.get("missing_fields", []) + missing2 + missing3)
             payload = {
                 "header": parsed.get("header", {}),
