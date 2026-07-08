@@ -36,19 +36,31 @@ def load_rule_index(index_path: Path) -> Dict[str, Dict[str, str]]:
     return index
 
 
-def load_collector_index(index_path: Path) -> Dict[str, str]:
+def load_collector_index(index_path: Path) -> Dict[str, Dict[str, str]]:
     if not index_path.exists():
         raise RuntimeError(f"collector data file not found: {index_path}")
     data = json.loads(index_path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise RuntimeError("collector data file must be a JSON object")
 
-    index: Dict[str, str] = {}
+    index: Dict[str, Dict[str, str]] = {}
     for name, collector in data.items():
         normalized_name = normalize_lookup(name)
-        normalized_collector = "" if collector is None else str(collector).strip()
-        if normalized_name and normalized_collector:
-            index[normalized_name] = normalized_collector
+        if not normalized_name:
+            continue
+
+        if isinstance(collector, dict):
+            collector_value = str(collector.get("空气收集器", "") or "").strip()
+            device_value = str(collector.get("采样测量设备", "") or "").strip()
+        else:
+            collector_value = "" if collector is None else str(collector).strip()
+            device_value = ""
+
+        if collector_value or device_value:
+            index[normalized_name] = {
+                "collector": collector_value,
+                "device": device_value,
+            }
     return index
 
 
@@ -107,7 +119,7 @@ def build_table2(
 
 def merge_projects_by_collector(
     rows: List[Dict[str, str]],
-    collector_index: Dict[str, str],
+    collector_index: Dict[str, Dict[str, str]],
     table3_keys: Tuple[str, ...],
 ) -> List[Dict[str, str]]:
     merged: List[Dict[str, str]] = []
@@ -117,8 +129,9 @@ def merge_projects_by_collector(
     for row in rows:
         filled = {key: row.get(key, "") for key in table3_keys}
         project = filled.get("project", "")
-        collector = collector_index.get(normalize_lookup(project), "")
-        filled["collector"] = collector
+        collector_info = collector_index.get(normalize_lookup(project), {})
+        filled["collector"] = collector_info.get("collector", "")
+        filled["device"] = collector_info.get("device", "")
 
         group_key = tuple(
             filled[key]
@@ -152,7 +165,7 @@ def sort_table3_rows(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     )
 
 
-def build_table3(rows: List[Dict[str, str]], collector_index: Dict[str, str]) -> Tuple[List[Dict[str, str]], List[str]]:
+def build_table3(rows: List[Dict[str, str]], collector_index: Dict[str, Dict[str, str]]) -> Tuple[List[Dict[str, str]], List[str]]:
     output: List[Dict[str, str]] = []
     missing: List[str] = []
     table3_keys = (

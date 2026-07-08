@@ -148,8 +148,18 @@ def test_table3_project_merge() -> None:
 
     assert missing == []
     assert len(merged) == 2
-    assert any(row["project"] == "甲苯、乙酸甲酯" and row["collector"] == "" for row in merged)
-    assert any(row["project"] == "二氯甲烷" and row["collector"] == "采气袋" for row in merged)
+    assert any(
+        row["project"] == "甲苯、乙酸甲酯"
+        and row["collector"] == "活性炭管"
+        and row["device"] == "防爆空气采样器FCC-1500H"
+        for row in merged
+    )
+    assert any(
+        row["project"] == "二氯甲烷"
+        and row["collector"] == "采气袋"
+        and row["device"] == "防爆大气采样器QC-4S"
+        for row in merged
+    )
 
 
 def main() -> int:
