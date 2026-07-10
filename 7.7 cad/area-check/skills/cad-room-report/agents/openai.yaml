@@ -1,0 +1,3 @@
+display_name: CAD Room Report
+short_description: Parse DWG floor plans into enclosed-space count reports.
+default_prompt: Parse the DWG file, count enclosed spaces, and generate a JSON report with warnings.
