@@ -29,6 +29,77 @@ PURE_NUMERIC_TEXT_PATTERN = re.compile(
 LABEL_TO_POLYGON_MAX_DISTANCE = 12000.0
 AREA_TO_POLYGON_MAX_DISTANCE = 12000.0
 LABEL_SEARCH_RADIUS = 12000.0
+NUMERIC_ONLY_AREA_LAYERS = {
+    "05-辅助-建筑指标",
+    "05-辅助-面积文字",
+    "05-辅助-防火分区",
+}
+NUMERIC_ONLY_AREA_SOURCE_PREFIXES = ("modelspace", "block:核心筒", "block:卫生间")
+AREA_CONTEXT_EXCLUDE_KEYWORDS = (
+    "楼梯正压",
+    "分户墙",
+    "door",
+)
+MEANINGFUL_LABEL_KEYWORDS = (
+    "商业",
+    "商铺",
+    "店铺",
+    "餐饮",
+    "办公",
+    "办公室",
+    "办公区",
+    "预留餐饮条件",
+    "预留机房",
+    "男厕",
+    "女厕",
+    "厕所",
+    "卫生间",
+    "茶水间",
+    "清洁间",
+    "储藏",
+    "储物",
+    "前室",
+    "电梯厅",
+    "避难",
+    "机房",
+    "泵房",
+    "配电",
+    "变电",
+    "排烟机房",
+    "排风机房",
+    "排风小室",
+    "排烟小室",
+    "进风小室",
+    "报警阀间",
+    "高位消防水箱",
+    "给水泵房",
+    "中水泵房",
+    "服务电梯机房",
+    "膨胀水箱间",
+)
+NOISE_LABEL_EXACT = {
+    "×",
+    "高",
+    "结",
+    "余同",
+}
+NOISE_LABEL_KEYWORDS = (
+    "挡烟垂壁",
+    "洞底标高",
+    "墙洞",
+    "层高线以上",
+    "填充区域",
+    "设备基础",
+    "楼梯平台",
+    "外轮廓线",
+)
+NOISE_LABEL_PATTERNS = (
+    re.compile(r"^\d+(?:\.\d+)?%?$"),
+    re.compile(r"^\d+(?:\.\d+)?m(?:m)?$"),
+    re.compile(r"^[A-Z]{1,4}\d+[A-Z0-9\-]*$"),
+    re.compile(r"^[A-Z]{1,3}-\d+$"),
+    re.compile(r"^\+?\d+(?:\.\d+)?m$"),
+)
 
 
 def _rounded_point(point: Sequence[float], precision: int = 6) -> tuple[float, float]:
@@ -215,6 +286,26 @@ def _extract_area_candidates(clean_text: str, *, allow_numeric_only: bool = Fals
     return deduped
 
 
+def _allow_numeric_only_area(layer: str, source: str) -> bool:
+    if layer not in NUMERIC_ONLY_AREA_LAYERS:
+        return False
+    return source.startswith(NUMERIC_ONLY_AREA_SOURCE_PREFIXES)
+
+
+def _is_plausible_area_record(record: dict) -> bool:
+    value = float(record["value"])
+    if not (0.9 <= value < 1000) or math.isclose(value, 1.0):
+        return False
+    parse_kind = str(record.get("parse_kind") or "")
+    if parse_kind != "pure_numeric_text":
+        return True
+    if not _allow_numeric_only_area(str(record["layer"]), str(record.get("source") or "")):
+        return False
+    source = str(record.get("source") or "").lower()
+    context = str(record.get("context") or "").lower()
+    return not any(keyword.lower() in source or keyword.lower() in context for keyword in AREA_CONTEXT_EXCLUDE_KEYWORDS)
+
+
 def _dedupe_area_records(records: list[dict]) -> list[dict]:
     deduped: dict[tuple[float, float, float], dict] = {}
     for record in records:
@@ -254,6 +345,29 @@ def _dedupe_labels(labels: list[dict]) -> list[dict]:
     return list(deduped.values())
 
 
+def _is_meaningful_label(text: str) -> bool:
+    return any(keyword in text for keyword in MEANINGFUL_LABEL_KEYWORDS)
+
+
+def _is_noise_label(text: str) -> bool:
+    if text in NOISE_LABEL_EXACT:
+        return True
+    if any(keyword in text for keyword in NOISE_LABEL_KEYWORDS):
+        return True
+    return any(pattern.match(text) for pattern in NOISE_LABEL_PATTERNS)
+
+
+def _label_priority(label: dict) -> tuple[int, float, str]:
+    text = str(label["text"])
+    if _is_meaningful_label(text):
+        category = 0
+    elif _is_noise_label(text):
+        category = 2
+    else:
+        category = 1
+    return (category, round(float(label["distance"]), 3), text)
+
+
 def _bucket_counts(records: list[dict], *, field: str = "value") -> dict:
     values = [record[field] for record in records]
     return {
@@ -275,7 +389,7 @@ def _collect_text_records(document) -> tuple[list[dict], list[dict]]:
         else:
             text = entity.text or ""
         clean = _clean_text(text)
-        matches = _extract_area_candidates(clean, allow_numeric_only=True)
+        matches = _extract_area_candidates(clean, allow_numeric_only=_allow_numeric_only_area(entity.dxf.layer, source))
         if matches:
             for candidate in matches:
                 area_records.append(
@@ -323,9 +437,7 @@ def _collect_text_records(document) -> tuple[list[dict], list[dict]]:
             world_point = transform.transform(Vec3(point[0], point[1], 0.0))
             append_entity_text(entity, float(world_point.x), float(world_point.y), f"block:{insert.dxf.name}")
 
-    filtered_area_records = [
-        record for record in area_records if 0.9 <= record["value"] < 1000 and not math.isclose(record["value"], 1.0)
-    ]
+    filtered_area_records = [record for record in area_records if _is_plausible_area_record(record)]
     return _dedupe_area_records(filtered_area_records), _dedupe_labels(label_records)
 
 
@@ -391,10 +503,7 @@ def _build_closed_space_inventory(polygons: list[Polygon], area_records: list[di
             area_links.get(polygon_index, []),
             key=lambda record: (record["distance"], abs(record["value"] - polygon.area / AREA_SCALE), record["value"]),
         )
-        matched_labels = sorted(
-            label_links.get(polygon_index, []),
-            key=lambda record: (record["distance"], record["text"]),
-        )
+        matched_labels = sorted(label_links.get(polygon_index, []), key=_label_priority)
         nearby_labels = [
             {
                 "text": label["text"],
@@ -406,7 +515,8 @@ def _build_closed_space_inventory(polygons: list[Polygon], area_records: list[di
             for label in matched_labels
             if label["distance"] <= LABEL_SEARCH_RADIUS
         ]
-        primary_label = matched_labels[0]["text"] if matched_labels else None
+        meaningful_labels = [label for label in nearby_labels if _is_meaningful_label(label["text"])]
+        primary_label = meaningful_labels[0]["text"] if meaningful_labels else (nearby_labels[0]["text"] if nearby_labels else None)
         primary_area_text = matched_areas[0]["value"] if matched_areas else None
 
         spaces.append(
@@ -416,6 +526,7 @@ def _build_closed_space_inventory(polygons: list[Polygon], area_records: list[di
                 "centroid": [round(centroid.x, 3), round(centroid.y, 3)],
                 "primary_label": primary_label,
                 "labels": nearby_labels,
+                "meaningful_labels": meaningful_labels,
                 "primary_area_text": primary_area_text,
                 "area_text_candidates": [
                     {
