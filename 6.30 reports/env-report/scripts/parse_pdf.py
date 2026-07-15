@@ -347,6 +347,36 @@ def make_table3_row(
     return row
 
 
+def work_duration(work_time: str) -> str:
+    """Convert a survey shift schedule such as 08:00-12:00 13:30-17:30 to hours."""
+    values = re.findall(r"(\d{1,2})[：:](\d{2})", work_time or "")
+    if len(values) < 2:
+        return ""
+
+    minutes = [int(hour) * 60 + int(minute) for hour, minute in values]
+    total = sum(end - start for start, end in zip(minutes[::2], minutes[1::2]) if end >= start)
+    if not total:
+        return ""
+    hours = total / 60
+    return f"{hours:g}h"
+
+
+def sampling_target(value: str) -> str:
+    """Keep the sampling object/location and drop the repeated operation wording."""
+    target = normalize_text(value)
+    workbench_end = target.find("工位")
+    if workbench_end < 0:
+        return target
+
+    workbench_end += len("工位")
+    suffix = target[workbench_end:]
+    # A parenthetical process moment is meaningful sampling information; ordinary
+    # action text such as "扪鞋工位扪鞋" merely repeats the location.
+    if suffix.startswith("（") or suffix.startswith("("):
+        return target
+    return target[:workbench_end]
+
+
 def build_table3(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     rows: List[Dict[str, str]] = []
     matched_overall_rows: set[int] = set()
@@ -361,9 +391,7 @@ def build_table3(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str,
             people_per_shift = overall_row.get("people_per_shift", "")
             overall_job_type = overall_row.get("job_type", "")
             exposure_type = overall_row.get("exposure_type", "")
-            target_prefix = detail_row.get("trigger", "")
-            target_value = detail_row.get("target", "")
-            target = f"{target_prefix}:{target_value}" if target_prefix and target_value else target_value or target_prefix
+            target = sampling_target(detail_row.get("target", ""))
             for project in projects:
                 rows.append(
                     make_table3_row(
@@ -389,9 +417,10 @@ def build_table3(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str,
                     position=overall_row.get("position", ""),
                     people_per_shift=overall_row.get("people_per_shift", ""),
                     job_type=overall_row.get("job_type", ""),
-                    target=overall_row.get("target", ""),
+                    target=sampling_target(overall_row.get("target", "")),
                     project=project,
                     exposure_type=overall_row.get("exposure_type", ""),
+                    representative_time=work_duration(overall_row.get("work_time", "")),
                 )
             )
     return rows

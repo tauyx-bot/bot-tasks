@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 
+PHYSICAL_PROJECTS = {"噪声", "高温", "手传振动"}
+POWDER_PROJECTS = {"其他粉尘", "砂轮磨尘"}
+PROJECT_ALIASES = {"戊烷（全部异构体）": "正戊烷"}
+
+
 def normalize_lookup(value: str) -> str:
     return "".join((value or "").split())
 
@@ -97,24 +102,87 @@ def build_table2(
     for project in source_projects:
         matched_rule = rule_index.get(normalize_lookup(project))
         if matched_rule:
+            storage = matched_rule["storage"]
+            if not storage and project in PHYSICAL_PROJECTS:
+                storage = "/"
+            elif not storage and project in POWDER_PROJECTS:
+                storage = "长期"
             rows.append(
                 {
                     "检测项目": project,
                     "检测依据": matched_rule["basis"],
-                    "样品保存条件和期限": matched_rule["storage"],
+                    "样品保存条件和期限": storage,
                 }
             )
             continue
+        storage = "/" if project in PHYSICAL_PROJECTS else "长期" if project in POWDER_PROJECTS else ""
         rows.append(
             {
                 "检测项目": project,
                 "检测依据": "",
-                "样品保存条件和期限": "",
+                "样品保存条件和期限": storage,
             }
         )
         missing.append(f"Table2 {project} 检测依据")
-        missing.append(f"Table2 {project} 样品保存条件和期限")
+        if not storage:
+            missing.append(f"Table2 {project} 样品保存条件和期限")
     return rows, missing
+
+
+def collector_for_project(
+    project: str,
+    sampling_mode: str,
+    collector_index: Dict[str, Dict[str, str]],
+) -> Dict[str, str]:
+    """Resolve individual-sampling equipment before the ordinary point-sampling entry."""
+    candidates = [project, PROJECT_ALIASES.get(project, "")]
+    if sampling_mode == "个体":
+        candidates = [f"劳动者-{candidate}" for candidate in candidates if candidate] + candidates
+
+    for candidate in candidates:
+        found = collector_index.get(normalize_lookup(candidate))
+        if found:
+            return found
+
+    # The instructions specify activated-carbon tubes for unlisted organic solvents.
+    return {
+        "collector": "活性炭管、溶剂解吸型",
+        "device": "防爆空气采样器FCC-1500H" if sampling_mode == "个体" else "防爆大气采样器QC-4S",
+    }
+
+
+def sampling_parameters(project: str, job_type: str, collector: str) -> Dict[str, str]:
+    is_physical = project in PHYSICAL_PROJECTS
+    sampling_mode = "个体" if job_type == "流动作业" and not is_physical else "定点"
+    if is_physical:
+        return {
+            "limit_type": "/",
+            "sampling_mode": sampling_mode,
+            "time_type": "直读",
+            "flow_rate": "/",
+            "points_per_day": "1",
+            "times_per_day": "1",
+            "days": "1",
+            "sampling_time": "/",
+        }
+
+    is_short_term = collector in {"采气袋", "吸收液"} or sampling_mode == "定点"
+    if collector == "采气袋":
+        flow_rate = "/"
+    elif "丙纶滤膜" in collector:
+        flow_rate = "2.0"
+    else:
+        flow_rate = "0.1" if is_short_term else "0.05"
+    return {
+        "limit_type": "PC-STEL" if is_short_term else "PC-TWA",
+        "sampling_mode": sampling_mode,
+        "time_type": "短时间" if is_short_term else "长时间",
+        "flow_rate": flow_rate,
+        "points_per_day": "1",
+        "times_per_day": "1",
+        "days": "1",
+        "sampling_time": "15min" if is_short_term else "3h",
+    }
 
 
 def merge_projects_by_collector(
@@ -129,9 +197,11 @@ def merge_projects_by_collector(
     for row in rows:
         filled = {key: row.get(key, "") for key in table3_keys}
         project = filled.get("project", "")
-        collector_info = collector_index.get(normalize_lookup(project), {})
+        sampling_mode = "个体" if filled.get("job_type") == "流动作业" and project not in PHYSICAL_PROJECTS else "定点"
+        collector_info = collector_for_project(project, sampling_mode, collector_index)
         filled["collector"] = collector_info.get("collector", "")
         filled["device"] = collector_info.get("device", "")
+        filled.update(sampling_parameters(project, filled.get("job_type", ""), filled["collector"]))
 
         group_key = tuple(
             filled[key]

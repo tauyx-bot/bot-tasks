@@ -10,6 +10,9 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+from docx.oxml.ns import qn
+from docx.shared import Pt
+
 
 TABLE2_COLUMNS = ["检测项目", "检测依据", "样品保存条件和期限"]
 TABLE3_KEYS = [
@@ -34,6 +37,10 @@ TABLE3_KEYS = [
     "representative_time",
 ]
 
+FILL_FONT_NAME = "Times New Roman"
+FILL_EAST_ASIA_FONT = "宋体"
+FILL_FONT_SIZE = Pt(10.5)
+
 
 def import_docx():
     try:
@@ -43,25 +50,39 @@ def import_docx():
     return Document
 
 
+def format_fill_run(run) -> None:
+    """Apply the required five-point font to generated form values."""
+    run.font.name = FILL_FONT_NAME
+    run.font.size = FILL_FONT_SIZE
+    r_fonts = run._element.get_or_add_rPr().get_or_add_rFonts()
+    r_fonts.set(qn("w:ascii"), FILL_FONT_NAME)
+    r_fonts.set(qn("w:hAnsi"), FILL_FONT_NAME)
+    r_fonts.set(qn("w:eastAsia"), FILL_EAST_ASIA_FONT)
+
+
 def set_cell_text(cell, text: str) -> None:
-    text = text or ""
+    text = (text or "").strip()
     paragraphs = cell.paragraphs
     if not paragraphs:
         paragraph = cell.add_paragraph()
-        paragraph.add_run(text)
+        run = paragraph.add_run(text)
+        format_fill_run(run)
         return
 
     first_para = paragraphs[0]
     if first_para.runs:
         first_para.runs[0].text = text
+        format_fill_run(first_para.runs[0])
         for run in first_para.runs[1:]:
             run.text = ""
     else:
-        first_para.add_run(text)
+        run = first_para.add_run(text)
+        format_fill_run(run)
 
+    # Cloned and vertically merged template cells can retain blank paragraphs.
+    # Remove them so the value has no trailing line breaks that offset centering.
     for paragraph in paragraphs[1:]:
-        for run in paragraph.runs:
-            run.text = ""
+        paragraph._element.getparent().remove(paragraph._element)
 
 
 def append_cloned_row(table, template_row, insert_before_row_idx: int):
@@ -89,13 +110,15 @@ def load_payload(path: Path) -> Dict[str, object]:
 
 
 def set_paragraph_text(paragraph, text: str) -> None:
-    text = text or ""
+    text = (text or "").strip()
     if paragraph.runs:
         paragraph.runs[0].text = text
+        format_fill_run(paragraph.runs[0])
         for run in paragraph.runs[1:]:
             run.text = ""
     else:
-        paragraph.add_run(text)
+        run = paragraph.add_run(text)
+        format_fill_run(run)
 
 
 def format_detection_type(value: str) -> str:
@@ -136,22 +159,37 @@ def write_table2(table, rows: List[Dict[str, str]]) -> None:
         set_cell_text(target.cells[2], row.get("样品保存条件和期限", ""))
 
 
-def merge_vertical_same_value_cells(table, start_row: int, end_row: int, column_idx: int) -> None:
+def merge_vertical_same_value_cells(
+    table,
+    start_row: int,
+    end_row: int,
+    column_idx: int,
+    required_match_column_idxs: Tuple[int, ...] = (),
+) -> None:
     if end_row <= start_row:
         return
 
     group_start = start_row
     current_value = table.rows[start_row].cells[column_idx].text.strip()
+    required_match_values = tuple(
+        table.rows[start_row].cells[column].text.strip()
+        for column in required_match_column_idxs
+    )
 
     for row_idx in range(start_row + 1, end_row + 1):
         row_value = table.rows[row_idx].cells[column_idx].text.strip()
-        if row_value == current_value:
+        row_required_match_values = tuple(
+            table.rows[row_idx].cells[column].text.strip()
+            for column in required_match_column_idxs
+        )
+        if row_value == current_value and row_required_match_values == required_match_values:
             continue
         if current_value and group_start < row_idx - 1:
             merged_cell = table.cell(group_start, column_idx).merge(table.cell(row_idx - 1, column_idx))
             set_cell_text(merged_cell, current_value)
         group_start = row_idx
         current_value = row_value
+        required_match_values = row_required_match_values
 
     if current_value and group_start < end_row:
         merged_cell = table.cell(group_start, column_idx).merge(table.cell(end_row, column_idx))
@@ -169,8 +207,13 @@ def write_table3(table, rows: List[Dict[str, str]]) -> None:
             set_cell_text(target.cells[idx], row.get(key, ""))
     if rows:
         end_row = start_row + len(rows) - 1
-        merge_vertical_same_value_cells(table, start_row, end_row, 1)
-        merge_vertical_same_value_cells(table, start_row, end_row, 2)
+        # A workplace may span multiple jobs, but must not merge across job boundaries.
+        merge_vertical_same_value_cells(table, start_row, end_row, 1, required_match_column_idxs=(2,))
+        merge_vertical_same_value_cells(table, start_row, end_row, 2, required_match_column_idxs=(1,))
+        # Remaining context values merge independently, but only inside the same
+        # workplace-and-job group.
+        for column in (3, 4, 5, 8):
+            merge_vertical_same_value_cells(table, start_row, end_row, column, required_match_column_idxs=(1, 2))
 
 
 def main() -> int:
