@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from docx.oxml.ns import qn
-from docx.shared import Pt
+from docx.shared import Cm, Pt
 
 
 TABLE2_COLUMNS = ["检测项目", "检测依据", "样品保存条件和期限"]
@@ -37,9 +37,7 @@ TABLE3_KEYS = [
     "representative_time",
 ]
 
-FILL_FONT_NAME = "Times New Roman"
-FILL_EAST_ASIA_FONT = "宋体"
-FILL_FONT_SIZE = Pt(10.5)
+DOCUMENT_RULES: Dict[str, object] = {}
 
 
 def import_docx():
@@ -50,14 +48,23 @@ def import_docx():
     return Document
 
 
+def load_document_rules(path: Path) -> Dict[str, object]:
+    if not path.exists():
+        raise RuntimeError(f"report rules file not found: {path}")
+    rules = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(rules, dict) or not isinstance(rules.get("document"), dict):
+        raise RuntimeError("report rules file must contain a document object")
+    return rules["document"]
+
+
 def format_fill_run(run) -> None:
     """Apply the required five-point font to generated form values."""
-    run.font.name = FILL_FONT_NAME
-    run.font.size = FILL_FONT_SIZE
+    run.font.name = DOCUMENT_RULES["fill_font_name"]
+    run.font.size = Pt(DOCUMENT_RULES["fill_font_size_pt"])
     r_fonts = run._element.get_or_add_rPr().get_or_add_rFonts()
-    r_fonts.set(qn("w:ascii"), FILL_FONT_NAME)
-    r_fonts.set(qn("w:hAnsi"), FILL_FONT_NAME)
-    r_fonts.set(qn("w:eastAsia"), FILL_EAST_ASIA_FONT)
+    r_fonts.set(qn("w:ascii"), DOCUMENT_RULES["fill_font_name"])
+    r_fonts.set(qn("w:hAnsi"), DOCUMENT_RULES["fill_font_name"])
+    r_fonts.set(qn("w:eastAsia"), DOCUMENT_RULES["fill_east_asia_font"])
 
 
 def set_cell_text(cell, text: str) -> None:
@@ -122,7 +129,7 @@ def set_paragraph_text(paragraph, text: str) -> None:
 
 
 def format_detection_type(value: str) -> str:
-    options = ["委托检测", "定期检测", "评价检测"]
+    options = DOCUMENT_RULES["detection_type_options"]
     normalized = (value or "").strip()
     parts = []
     for option in options:
@@ -157,6 +164,38 @@ def write_table2(table, rows: List[Dict[str, str]]) -> None:
         set_cell_text(target.cells[0], row.get("检测项目", ""))
         set_cell_text(target.cells[1], row.get("检测依据", ""))
         set_cell_text(target.cells[2], row.get("样品保存条件和期限", ""))
+
+
+def set_table3_column_widths(table) -> None:
+    """Reserve four five-point Chinese characters for the object/location column."""
+    target_column = 5
+    project_column = 6
+    points_per_day_column = 14
+    sampling_time_column = 17
+    grid_columns = table._tbl.tblGrid.gridCol_lst
+    if len(grid_columns) <= sampling_time_column:
+        return
+
+    target_width = Cm(DOCUMENT_RULES["table3_widths_cm"]["target"])
+    points_per_day_width = Cm(DOCUMENT_RULES["table3_widths_cm"]["points_per_day"])
+    old_target_width = grid_columns[target_column].w
+    project_width = grid_columns[project_column].w + old_target_width - target_width
+    old_points_per_day_width = grid_columns[points_per_day_column].w
+    sampling_time_width = (
+        grid_columns[sampling_time_column].w
+        + old_points_per_day_width
+        - points_per_day_width
+    )
+    table.autofit = False
+    grid_columns[target_column].w = target_width
+    grid_columns[project_column].w = project_width
+    grid_columns[points_per_day_column].w = points_per_day_width
+    grid_columns[sampling_time_column].w = sampling_time_width
+    for row in table.rows:
+        row.cells[target_column].width = target_width
+        row.cells[project_column].width = project_width
+        row.cells[points_per_day_column].width = points_per_day_width
+        row.cells[sampling_time_column].width = sampling_time_width
 
 
 def merge_vertical_same_value_cells(
@@ -197,6 +236,7 @@ def merge_vertical_same_value_cells(
 
 
 def write_table3(table, rows: List[Dict[str, str]]) -> None:
+    set_table3_column_widths(table)
     start_row = 1
     template_row = 1
     note_row = len(table.rows) - 1
@@ -221,9 +261,13 @@ def main() -> int:
     parser.add_argument("--template", required=True, type=Path)
     parser.add_argument("--payload", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--config", type=Path)
     args = parser.parse_args()
 
     try:
+        global DOCUMENT_RULES
+        config_path = args.config or Path(__file__).resolve().parent.parent / "knowledge" / "report_rules.json"
+        DOCUMENT_RULES = load_document_rules(config_path)
         Document = import_docx()
         payload = load_payload(args.payload)
         doc = Document(str(args.template))

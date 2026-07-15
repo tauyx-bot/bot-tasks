@@ -44,9 +44,8 @@ TABLE3_KEYS = [
     "sampling_time",
     "representative_time",
 ]
-IGNORE_PROJECTS = {"", "/", "无"}
-STOP_DETAIL_MARKERS = ("七、其他附件", "工艺名称")
 SPLIT_PATTERN = re.compile(r"[、，,；;\n]+")
+PARSING_RULES: Dict[str, Any] = {}
 
 
 def import_pdfplumber():
@@ -55,6 +54,15 @@ def import_pdfplumber():
     except ModuleNotFoundError as exc:  # pragma: no cover - runtime env check
         raise RuntimeError("pdfplumber is not installed") from exc
     return pdfplumber
+
+
+def load_parsing_rules(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        raise RuntimeError(f"report rules file not found: {path}")
+    rules = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(rules, dict) or not isinstance(rules.get("parsing"), dict):
+        raise RuntimeError("report rules file must contain a parsing object")
+    return rules["parsing"]
 
 
 def normalize_text(value: Any) -> str:
@@ -180,11 +188,11 @@ def parse_exposure_rows(raw_tables: List[List[List[str]]]) -> tuple[List[List[st
             if "详细接触情况（针对接触水平相对不稳定因素）" in joined:
                 section = "detail"
                 continue
-            if row[0].startswith("七、其他附件") or row[0].startswith("工艺名称"):
+            if any(row[0].startswith(marker) for marker in PARSING_RULES["detail_stop_markers"]):
                 if section == "detail":
                     section = None
                 continue
-            if len(row) <= 3 and any(marker in joined for marker in STOP_DETAIL_MARKERS):
+            if len(row) <= 3 and any(marker in joined for marker in PARSING_RULES["detail_stop_markers"]):
                 if section == "detail":
                     section = None
                 continue
@@ -290,10 +298,11 @@ def parse_detail_rows(rows: List[List[str]]) -> List[Dict[str, str]]:
 
 def split_projects(value: str) -> List[str]:
     normalized = normalize_text(value)
-    if normalized in IGNORE_PROJECTS:
+    ignored_projects = set(PARSING_RULES["ignored_projects"])
+    if normalized in ignored_projects:
         return []
     items = [normalize_text(part) for part in SPLIT_PATTERN.split(normalized)]
-    return [item for item in items if item not in IGNORE_PROJECTS]
+    return [item for item in items if item not in ignored_projects]
 
 
 def build_projects(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str, str]]) -> List[str]:
@@ -364,17 +373,24 @@ def work_duration(work_time: str) -> str:
 def sampling_target(value: str) -> str:
     """Keep the sampling object/location and drop the repeated operation wording."""
     target = normalize_text(value)
-    workbench_end = target.find("工位")
+    suffix_name = PARSING_RULES["workbench_suffix"]
+    workbench_end = target.find(suffix_name)
     if workbench_end < 0:
         return target
 
-    workbench_end += len("工位")
+    workbench_end += len(suffix_name)
     suffix = target[workbench_end:]
     # A parenthetical process moment is meaningful sampling information; ordinary
     # action text such as "扪鞋工位扪鞋" merely repeats the location.
     if suffix.startswith("（") or suffix.startswith("("):
         return target
     return target[:workbench_end]
+
+
+def sampling_targets(value: str) -> List[str]:
+    """Extract every explicit sampling location from an overall exposure row."""
+    targets = [sampling_target(part) for part in re.split(r"[；;]", value or "")]
+    return dedupe(target for target in targets if target)
 
 
 def build_table3(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
@@ -387,7 +403,13 @@ def build_table3(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str,
                 continue
             overall_row = match_overall_row(detail_row, overall_rows) or {}
             if overall_row in overall_rows:
-                matched_overall_rows.add(overall_rows.index(overall_row))
+                overall_index = overall_rows.index(overall_row)
+                # The overall table is authoritative when it explicitly lists
+                # multiple locations.  Its full hazard-factor list applies to
+                # every listed location, while the detail table supplies timing.
+                if len(sampling_targets(overall_row.get("target", ""))) > 1:
+                    continue
+                matched_overall_rows.add(overall_index)
             people_per_shift = overall_row.get("people_per_shift", "")
             overall_job_type = overall_row.get("job_type", "")
             exposure_type = overall_row.get("exposure_type", "")
@@ -407,22 +429,24 @@ def build_table3(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str,
                     )
                 )
     for index, overall_row in enumerate(overall_rows):
-        if index in matched_overall_rows and overall_row.get("exposure_type", "") == "②":
+        targets = sampling_targets(overall_row.get("target", ""))
+        if index in matched_overall_rows and overall_row.get("exposure_type", "") == PARSING_RULES["detail_preferred_exposure_type"]:
             continue
         projects = split_projects(overall_row.get("project_raw", ""))
-        for project in projects:
-            rows.append(
-                make_table3_row(
-                    workplace=overall_row.get("workplace", ""),
-                    position=overall_row.get("position", ""),
-                    people_per_shift=overall_row.get("people_per_shift", ""),
-                    job_type=overall_row.get("job_type", ""),
-                    target=sampling_target(overall_row.get("target", "")),
-                    project=project,
-                    exposure_type=overall_row.get("exposure_type", ""),
-                    representative_time=work_duration(overall_row.get("work_time", "")),
+        for target in targets or [sampling_target(overall_row.get("target", ""))]:
+            for project in projects:
+                rows.append(
+                    make_table3_row(
+                        workplace=overall_row.get("workplace", ""),
+                        position=overall_row.get("position", ""),
+                        people_per_shift=overall_row.get("people_per_shift", ""),
+                        job_type=overall_row.get("job_type", ""),
+                        target=target,
+                        project=project,
+                        exposure_type=overall_row.get("exposure_type", ""),
+                        representative_time=work_duration(overall_row.get("work_time", "")),
+                    )
                 )
-            )
     return rows
 
 
@@ -448,7 +472,9 @@ def build_missing_fields(header: Dict[str, str], overall_rows: List[Dict[str, st
     return missing
 
 
-def build_payload(pdf_path: Path) -> Dict[str, Any]:
+def build_payload(pdf_path: Path, config_path: Path) -> Dict[str, Any]:
+    global PARSING_RULES
+    PARSING_RULES = load_parsing_rules(config_path)
     full_text, raw_tables = read_pdf_tables(pdf_path)
     header = extract_header(full_text, raw_tables)
     overall_raw_rows, detail_raw_rows = parse_exposure_rows(raw_tables)
@@ -471,10 +497,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pdf", required=True, type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--config", type=Path)
     args = parser.parse_args()
 
     try:
-        payload = build_payload(args.pdf)
+        config_path = args.config or Path(__file__).resolve().parent.parent / "knowledge" / "report_rules.json"
+        payload = build_payload(args.pdf, config_path)
     except Exception as exc:  # pragma: no cover - CLI error path
         print(str(exc), file=sys.stderr)
         return 1

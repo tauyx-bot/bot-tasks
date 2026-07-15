@@ -12,11 +12,6 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 
-PHYSICAL_PROJECTS = {"噪声", "高温", "手传振动"}
-POWDER_PROJECTS = {"其他粉尘", "砂轮磨尘"}
-PROJECT_ALIASES = {"戊烷（全部异构体）": "正戊烷"}
-
-
 def normalize_lookup(value: str) -> str:
     return "".join((value or "").split())
 
@@ -69,9 +64,18 @@ def load_collector_index(index_path: Path) -> Dict[str, Dict[str, str]]:
     return index
 
 
-def run_parse_script(script: Path, pdf: Path, output: Path) -> None:
+def load_report_rules(path: Path) -> Dict[str, object]:
+    if not path.exists():
+        raise RuntimeError(f"report rules file not found: {path}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise RuntimeError("report rules file must be a JSON object")
+    return data
+
+
+def run_parse_script(script: Path, pdf: Path, output: Path, config: Path) -> None:
     result = subprocess.run(
-        [sys.executable, str(script), "--pdf", str(pdf), "--output", str(output)],
+        [sys.executable, str(script), "--pdf", str(pdf), "--output", str(output), "--config", str(config)],
         check=False,
         capture_output=True,
         text=True,
@@ -92,7 +96,11 @@ def build_table2(
     projects: List[str],
     table3_rows: List[Dict[str, str]],
     rule_index: Dict[str, Dict[str, str]],
+    report_rules: Dict[str, object],
 ) -> Tuple[List[Dict[str, str]], List[str]]:
+    categories = report_rules["project_categories"]
+    physical_projects = set(categories["physical"])
+    powder_projects = set(categories["powder"])
     source_projects = dedupe(projects)
     if not source_projects:
         source_projects = dedupe([row.get("project", "") for row in table3_rows])
@@ -103,9 +111,9 @@ def build_table2(
         matched_rule = rule_index.get(normalize_lookup(project))
         if matched_rule:
             storage = matched_rule["storage"]
-            if not storage and project in PHYSICAL_PROJECTS:
+            if not storage and project in physical_projects:
                 storage = "/"
-            elif not storage and project in POWDER_PROJECTS:
+            elif not storage and project in powder_projects:
                 storage = "长期"
             rows.append(
                 {
@@ -115,7 +123,7 @@ def build_table2(
                 }
             )
             continue
-        storage = "/" if project in PHYSICAL_PROJECTS else "长期" if project in POWDER_PROJECTS else ""
+        storage = "/" if project in physical_projects else "长期" if project in powder_projects else ""
         rows.append(
             {
                 "检测项目": project,
@@ -133,32 +141,62 @@ def collector_for_project(
     project: str,
     sampling_mode: str,
     collector_index: Dict[str, Dict[str, str]],
+    report_rules: Dict[str, object],
 ) -> Dict[str, str]:
     """Resolve individual-sampling equipment before the ordinary point-sampling entry."""
-    candidates = [project, PROJECT_ALIASES.get(project, "")]
-    if sampling_mode == "个体":
-        candidates = [f"劳动者-{candidate}" for candidate in candidates if candidate] + candidates
+    sampling_rules = report_rules["sampling"]
+    collector_rules = report_rules["collector_rules"]
+    aliases = report_rules["project_aliases"]
+    candidates = [project, aliases.get(project, "")]
+    if sampling_mode == sampling_rules["individual_mode"]:
+        candidates = [f"{sampling_rules['individual_collector_prefix']}{candidate}" for candidate in candidates if candidate] + candidates
 
     for candidate in candidates:
         found = collector_index.get(normalize_lookup(candidate))
         if found:
-            return found
+            collector = found.get("collector", "")
+            device = found.get("device", "")
+            for normalization in collector_rules["normalizations"]:
+                if collector != normalization["collector"]:
+                    continue
+                collector = normalization["normalized_collector"]
+                if sampling_mode == sampling_rules["point_mode"]:
+                    device = normalization["point_device"]
+                break
+            return {"collector": collector, "device": device}
 
-    # The instructions specify activated-carbon tubes for unlisted organic solvents.
+    fallback = collector_rules["fallback"]
     return {
-        "collector": "活性炭管、溶剂解吸型",
-        "device": "防爆空气采样器FCC-1500H" if sampling_mode == "个体" else "防爆大气采样器QC-4S",
+        "collector": fallback["collector"],
+        "device": fallback["individual_device"]
+        if sampling_mode == sampling_rules["individual_mode"]
+        else fallback["point_device"],
     }
 
 
-def sampling_parameters(project: str, job_type: str, collector: str) -> Dict[str, str]:
-    is_physical = project in PHYSICAL_PROJECTS
-    sampling_mode = "个体" if job_type == "流动作业" and not is_physical else "定点"
+def sampling_mode_for(project: str, job_type: str, target: str, report_rules: Dict[str, object]) -> str:
+    """Use an explicit PDF location before falling back to mobile-job sampling."""
+    sampling_rules = report_rules["sampling"]
+    if project in set(report_rules["project_categories"]["physical"]):
+        return sampling_rules["point_mode"]
+    if target == sampling_rules["individual_target"] or (job_type == sampling_rules["mobile_job_type"] and not target):
+        return sampling_rules["individual_mode"]
+    return sampling_rules["point_mode"]
+
+
+def sampling_parameters(
+    project: str,
+    sampling_mode: str,
+    collector: str,
+    report_rules: Dict[str, object],
+) -> Dict[str, str]:
+    sampling_rules = report_rules["sampling"]
+    is_physical = project in set(report_rules["project_categories"]["physical"])
     if is_physical:
         return {
-            "limit_type": "/",
+            "limit_type": sampling_rules["physical_limit_type"],
             "sampling_mode": sampling_mode,
-            "time_type": "直读",
+            "time_type": sampling_rules["direct_read_time_type"],
             "flow_rate": "/",
             "points_per_day": "1",
             "times_per_day": "1",
@@ -166,22 +204,25 @@ def sampling_parameters(project: str, job_type: str, collector: str) -> Dict[str
             "sampling_time": "/",
         }
 
-    is_short_term = collector in {"采气袋", "吸收液"} or sampling_mode == "定点"
-    if collector == "采气袋":
+    is_short_term = collector in {
+        sampling_rules["sample_bag_collector"],
+        sampling_rules["absorption_solution_collector"],
+    } or sampling_mode == sampling_rules["point_mode"]
+    if collector == sampling_rules["sample_bag_collector"]:
         flow_rate = "/"
-    elif "丙纶滤膜" in collector:
-        flow_rate = "2.0"
+    elif sampling_rules["dust_filter_keyword"] in collector:
+        flow_rate = sampling_rules["dust_flow_rate"]
     else:
-        flow_rate = "0.1" if is_short_term else "0.05"
+        flow_rate = sampling_rules["point_flow_rate"] if is_short_term else sampling_rules["individual_flow_rate"]
     return {
-        "limit_type": "PC-STEL" if is_short_term else "PC-TWA",
+        "limit_type": sampling_rules["point_limit_type"] if is_short_term else sampling_rules["individual_limit_type"],
         "sampling_mode": sampling_mode,
-        "time_type": "短时间" if is_short_term else "长时间",
+        "time_type": sampling_rules["short_time_type"] if is_short_term else sampling_rules["long_time_type"],
         "flow_rate": flow_rate,
         "points_per_day": "1",
         "times_per_day": "1",
         "days": "1",
-        "sampling_time": "15min" if is_short_term else "3h",
+        "sampling_time": sampling_rules["point_sampling_time"] if is_short_term else sampling_rules["individual_sampling_time"],
     }
 
 
@@ -189,32 +230,52 @@ def merge_projects_by_collector(
     rows: List[Dict[str, str]],
     collector_index: Dict[str, Dict[str, str]],
     table3_keys: Tuple[str, ...],
+    report_rules: Dict[str, object],
 ) -> List[Dict[str, str]]:
     merged: List[Dict[str, str]] = []
     grouped: Dict[Tuple[str, ...], Dict[str, str]] = {}
     project_orders: Dict[Tuple[str, ...], List[str]] = {}
 
     for row in rows:
-        filled = {key: row.get(key, "") for key in table3_keys}
-        project = filled.get("project", "")
-        sampling_mode = "个体" if filled.get("job_type") == "流动作业" and project not in PHYSICAL_PROJECTS else "定点"
-        collector_info = collector_for_project(project, sampling_mode, collector_index)
-        filled["collector"] = collector_info.get("collector", "")
-        filled["device"] = collector_info.get("device", "")
-        filled.update(sampling_parameters(project, filled.get("job_type", ""), filled["collector"]))
+        sampling_rules = report_rules["sampling"]
+        source = {key: row.get(key, "") for key in table3_keys}
+        sampling_context = source.get("target", "")
+        project = source.get("project", "")
+        point_or_individual = sampling_mode_for(project, source.get("job_type", ""), sampling_context, report_rules)
+        modes = [point_or_individual]
 
-        group_key = tuple(
-            filled[key]
-            for key in table3_keys
-            if key not in {"project"}
-        )
-        if group_key not in grouped:
-            grouped[group_key] = filled
-            project_orders[group_key] = []
-            merged.append(grouped[group_key])
+        base_collector = collector_for_project(project, point_or_individual, collector_index, report_rules)
+        base_parameters = sampling_parameters(project, point_or_individual, base_collector["collector"], report_rules)
+        # Every fixed workplace record with a PC limit is supplemented with a
+        # worker-worn PC-TWA sample. Physical factors use "/" and do not qualify.
+        if point_or_individual == sampling_rules["point_mode"] and base_parameters["limit_type"] in set(sampling_rules["pc_limit_types"]):
+            modes.append(sampling_rules["individual_mode"])
 
-        if project and project not in project_orders[group_key]:
-            project_orders[group_key].append(project)
+        for sampling_mode in modes:
+            filled = source.copy()
+            collector_info = collector_for_project(project, sampling_mode, collector_index, report_rules)
+            filled["collector"] = collector_info.get("collector", "")
+            filled["device"] = collector_info.get("device", "")
+            filled.update(sampling_parameters(project, sampling_mode, filled["collector"], report_rules))
+            # Fill the object/location only after the sampling mode is known.
+            filled["target"] = sampling_rules["individual_target"] if sampling_mode == sampling_rules["individual_mode"] else sampling_context
+
+            # A point sample must retain its source location. Individual samples
+            # are worn by the same worker, so identical worker-worn records from
+            # multiple work locations collapse into one row.
+            grouping_context = sampling_context if sampling_mode == sampling_rules["point_mode"] else ""
+            group_key = (grouping_context, sampling_mode) + tuple(
+                filled[key]
+                for key in table3_keys
+                if key not in {"project"}
+            )
+            if group_key not in grouped:
+                grouped[group_key] = filled
+                project_orders[group_key] = []
+                merged.append(grouped[group_key])
+
+            if project and project not in project_orders[group_key]:
+                project_orders[group_key].append(project)
 
     for group_key, target in grouped.items():
         target["project"] = "、".join(project_orders[group_key])
@@ -235,7 +296,11 @@ def sort_table3_rows(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     )
 
 
-def build_table3(rows: List[Dict[str, str]], collector_index: Dict[str, Dict[str, str]]) -> Tuple[List[Dict[str, str]], List[str]]:
+def build_table3(
+    rows: List[Dict[str, str]],
+    collector_index: Dict[str, Dict[str, str]],
+    report_rules: Dict[str, object],
+) -> Tuple[List[Dict[str, str]], List[str]]:
     output: List[Dict[str, str]] = []
     missing: List[str] = []
     table3_keys = (
@@ -260,7 +325,7 @@ def build_table3(rows: List[Dict[str, str]], collector_index: Dict[str, Dict[str
         "representative_time",
     )
 
-    merged_rows = sort_table3_rows(merge_projects_by_collector(rows, collector_index, table3_keys))
+    merged_rows = sort_table3_rows(merge_projects_by_collector(rows, collector_index, table3_keys, report_rules))
     for index, filled in enumerate(merged_rows, start=1):
         filled["sampling_no"] = str(index)
         project = filled.get("project", "") or "未命名项目"
@@ -271,7 +336,7 @@ def build_table3(rows: List[Dict[str, str]], collector_index: Dict[str, Dict[str
     return output, missing
 
 
-def run_fill_script(script: Path, template: Path, payload: Path, output: Path) -> None:
+def run_fill_script(script: Path, template: Path, payload: Path, output: Path, config: Path) -> None:
     result = subprocess.run(
         [
             sys.executable,
@@ -282,6 +347,8 @@ def run_fill_script(script: Path, template: Path, payload: Path, output: Path) -
             str(payload),
             "--output",
             str(output),
+            "--config",
+            str(config),
         ],
         check=False,
         capture_output=True,
@@ -296,6 +363,7 @@ def main() -> int:
     parser.add_argument("--pdf", required=True, type=Path)
     parser.add_argument("--template", required=True, type=Path)
     parser.add_argument("--rules", required=True, type=Path)
+    parser.add_argument("--config", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--json-out", type=Path)
     args = parser.parse_args()
@@ -305,21 +373,24 @@ def main() -> int:
     parse_script = scripts_dir / "parse_pdf.py"
     fill_script = scripts_dir / "fill_docx.py"
     collector_path = root_dir / "knowledge" / "collector.json"
+    config_path = args.config or root_dir / "knowledge" / "report_rules.json"
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             raw_payload_path = Path(tmpdir) / "parsed.json"
             final_payload_path = Path(tmpdir) / "payload.json"
-            run_parse_script(parse_script, args.pdf, raw_payload_path)
+            run_parse_script(parse_script, args.pdf, raw_payload_path, config_path)
             parsed = json.loads(raw_payload_path.read_text(encoding="utf-8"))
             rule_index = load_rule_index(args.rules)
             collector_index = load_collector_index(collector_path)
+            report_rules = load_report_rules(config_path)
             table2, missing2 = build_table2(
                 parsed.get("projects", []),
                 parsed.get("table3", []),
                 rule_index,
+                report_rules,
             )
-            table3, missing3 = build_table3(parsed.get("table3", []), collector_index)
+            table3, missing3 = build_table3(parsed.get("table3", []), collector_index, report_rules)
             missing_fields = dedupe(parsed.get("missing_fields", []) + missing2 + missing3)
             payload = {
                 "header": parsed.get("header", {}),
@@ -333,7 +404,7 @@ def main() -> int:
                 json.dumps(payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            run_fill_script(fill_script, args.template, final_payload_path, args.output)
+            run_fill_script(fill_script, args.template, final_payload_path, args.output, config_path)
             if args.json_out:
                 args.json_out.write_text(
                     json.dumps(payload, ensure_ascii=False, indent=2),
