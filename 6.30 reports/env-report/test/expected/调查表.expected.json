@@ -6,112 +6,6 @@
     "address": "中山市小榄镇竹源社区侨源东路13号（物业一区142号之2）",
     "detection_type": "定期检测"
   },
-  "projects": [
-    "噪声",
-    "蓝光胶水（取样分析）"
-  ],
-  "table2": [
-    {
-      "检测项目": "噪声",
-      "检测依据": "GBZ/T 189.8—2007",
-      "样品保存条件和期限": "/"
-    },
-    {
-      "检测项目": "蓝光胶水（取样分析）",
-      "检测依据": "",
-      "样品保存条件和期限": ""
-    }
-  ],
-  "table3": [
-    {
-      "sampling_no": "1",
-      "workplace": "生产车间",
-      "position": "成型工",
-      "people_per_shift": "1",
-      "job_type": "固定作业",
-      "target": "成型工位",
-      "project": "噪声",
-      "limit_type": "/",
-      "exposure_type": "①",
-      "sampling_mode": "定点",
-      "time_type": "直读",
-      "collector": "直读",
-      "device": "多功能声级计AWA6228",
-      "flow_rate": "/",
-      "points_per_day": "1",
-      "times_per_day": "1",
-      "days": "1",
-      "sampling_time": "/",
-      "representative_time": "8h"
-    },
-    {
-      "sampling_no": "2",
-      "workplace": "生产车间",
-      "position": "成型工",
-      "people_per_shift": "1",
-      "job_type": "固定作业",
-      "target": "成型工位",
-      "project": "蓝光胶水（取样分析）",
-      "limit_type": "PC-STEL",
-      "exposure_type": "①",
-      "sampling_mode": "定点",
-      "time_type": "短时间",
-      "collector": "活性炭管、溶剂解吸型",
-      "device": "防爆大气采样器QC-4S",
-      "flow_rate": "0.1",
-      "points_per_day": "1",
-      "times_per_day": "1",
-      "days": "1",
-      "sampling_time": "15min",
-      "representative_time": "8h"
-    },
-    {
-      "sampling_no": "3",
-      "workplace": "生产车间",
-      "position": "裁床工",
-      "people_per_shift": "1",
-      "job_type": "固定作业",
-      "target": "裁床工位",
-      "project": "噪声",
-      "limit_type": "/",
-      "exposure_type": "①",
-      "sampling_mode": "定点",
-      "time_type": "直读",
-      "collector": "直读",
-      "device": "多功能声级计AWA6228",
-      "flow_rate": "/",
-      "points_per_day": "1",
-      "times_per_day": "1",
-      "days": "1",
-      "sampling_time": "/",
-      "representative_time": "8h"
-    },
-    {
-      "sampling_no": "4",
-      "workplace": "生产车间",
-      "position": "针车工",
-      "people_per_shift": "1",
-      "job_type": "固定作业",
-      "target": "针车工位",
-      "project": "噪声",
-      "limit_type": "/",
-      "exposure_type": "①",
-      "sampling_mode": "定点",
-      "time_type": "直读",
-      "collector": "直读",
-      "device": "多功能声级计AWA6228",
-      "flow_rate": "/",
-      "points_per_day": "1",
-      "times_per_day": "1",
-      "days": "1",
-      "sampling_time": "/",
-      "representative_time": "8h"
-    }
-  ],
-  "missing_fields": [
-    "Table2 蓝光胶水（取样分析） 检测依据",
-    "Table2 蓝光胶水（取样分析） 样品保存条件和期限"
-  ],
   "survey_tables": {
     "basic_info": [],
     "materials": [],
@@ -208,5 +102,56 @@
     ],
     "detail_exposure": [],
     "attachments": []
-  }
+  },
+  "projects": [
+    "噪声",
+    "蓝光胶水（取样分析）"
+  ],
+  "table3": [
+    {
+      "workplace": "生产车间",
+      "position": "裁床工",
+      "people_per_shift": "1",
+      "job_type": "固定",
+      "target": "裁床工位",
+      "project": "噪声",
+      "exposure_type": "①",
+      "sampling_time": "",
+      "representative_time": "8h"
+    },
+    {
+      "workplace": "生产车间",
+      "position": "针车工",
+      "people_per_shift": "1",
+      "job_type": "固定",
+      "target": "针车工位",
+      "project": "噪声",
+      "exposure_type": "①",
+      "sampling_time": "",
+      "representative_time": "8h"
+    },
+    {
+      "workplace": "生产车间",
+      "position": "成型工",
+      "people_per_shift": "1",
+      "job_type": "固定",
+      "target": "成型工位",
+      "project": "蓝光胶水（取样分析）",
+      "exposure_type": "①",
+      "sampling_time": "",
+      "representative_time": "8h"
+    },
+    {
+      "workplace": "生产车间",
+      "position": "成型工",
+      "people_per_shift": "1",
+      "job_type": "固定",
+      "target": "成型工位",
+      "project": "噪声",
+      "exposure_type": "①",
+      "sampling_time": "",
+      "representative_time": "8h"
+    }
+  ],
+  "missing_fields": []
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate JSON results for sample PDFs and compare them to expected fixtures."""
+"""Compare parsed survey-PDF results with their JSON fixtures."""
 
 from __future__ import annotations
 
@@ -7,16 +7,8 @@ import argparse
 import json
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
-
-
-ROOT_DIR = Path(__file__).resolve().parent.parent
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
-
-from scripts.generate_report import build_table3, load_collector_index
 
 
 def load_config(path: Path) -> Dict[str, List[str]]:
@@ -83,83 +75,26 @@ def compare_values(expected: Any, result: Any, path: str, ignore_paths: set[str]
 def run_example(
     script: Path,
     pdf_path: Path,
-    template: Path,
-    rules: Path,
     result_json: Path,
+    config: Path,
 ) -> None:
-    with tempfile.TemporaryDirectory() as tmpdir:
-        output_docx = Path(tmpdir) / f"{pdf_path.stem}.docx"
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(script),
-                "--pdf",
-                str(pdf_path),
-                "--template",
-                str(template),
-                "--rules",
-                str(rules),
-                "--output",
-                str(output_docx),
-                "--json-out",
-                str(result_json),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or f"generate_report failed for {pdf_path.name}")
-
-
-def test_table3_project_merge() -> None:
-    collector_index = load_collector_index(ROOT_DIR / "knowledge" / "collector.json")
-    rows = [
-        {
-            "workplace": "A车间",
-            "position": "岗位1",
-            "people_per_shift": "1",
-            "job_type": "固定作业",
-            "target": "点位1",
-            "project": "甲苯",
-            "exposure_type": "①",
-        },
-        {
-            "workplace": "A车间",
-            "position": "岗位1",
-            "people_per_shift": "1",
-            "job_type": "固定作业",
-            "target": "点位1",
-            "project": "乙酸甲酯",
-            "exposure_type": "①",
-        },
-        {
-            "workplace": "A车间",
-            "position": "岗位1",
-            "people_per_shift": "1",
-            "job_type": "固定作业",
-            "target": "点位1",
-            "project": "二氯甲烷",
-            "exposure_type": "①",
-        },
-    ]
-
-    merged, missing = build_table3(rows, collector_index)
-
-    assert missing == []
-    assert len(merged) == 2
-    assert any(
-        row["project"] == "甲苯、乙酸甲酯"
-        and row["collector"] == "活性炭管"
-        and row["device"] == "防爆空气采样器FCC-1500H"
-        for row in merged
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--pdf",
+            str(pdf_path),
+            "--output",
+            str(result_json),
+            "--config",
+            str(config),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
     )
-    assert any(
-        row["project"] == "二氯甲烷"
-        and row["collector"] == "采气袋"
-        and row["device"] == "防爆大气采样器QC-4S"
-        for row in merged
-    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f"parse_pdf failed for {pdf_path.name}")
 
 
 def main() -> int:
@@ -169,14 +104,12 @@ def main() -> int:
     parser.add_argument("--examples-dir", type=Path, default=root_dir / "examples")
     parser.add_argument("--expected-dir", type=Path, default=test_dir / "expected")
     parser.add_argument("--results-dir", type=Path, default=test_dir / "results")
-    parser.add_argument("--template", type=Path, default=root_dir / "template" / "plan_template.docx")
-    parser.add_argument("--rules", type=Path, default=root_dir / "knowledge" / "data.json")
+    parser.add_argument("--parser-config", type=Path, default=root_dir / "knowledge" / "report_rules.json")
     parser.add_argument("--config", type=Path, default=test_dir / "json_compare_config.json")
     parser.add_argument("--refresh-expected", action="store_true")
     args = parser.parse_args()
 
-    script = root_dir / "scripts" / "generate_report.py"
-    test_table3_project_merge()
+    script = root_dir / "scripts" / "parse_pdf.py"
     config = load_config(args.config)
     ignore_paths = set(config["global_ignore_paths"])
     sort_list_paths = set(config["sort_list_paths"])
@@ -187,7 +120,7 @@ def main() -> int:
     for pdf_path in sorted(args.examples_dir.glob("*.pdf")):
         expected_json = args.expected_dir / f"{pdf_path.stem}.expected.json"
         result_json = args.results_dir / f"{pdf_path.stem}.result.json"
-        run_example(script, pdf_path, args.template, args.rules, result_json)
+        run_example(script, pdf_path, result_json, args.parser_config)
 
         if args.refresh_expected:
             expected_json.write_text(result_json.read_text(encoding="utf-8"), encoding="utf-8")

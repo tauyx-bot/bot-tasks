@@ -247,13 +247,25 @@ def write_table3(table, rows: List[Dict[str, str]]) -> None:
             set_cell_text(target.cells[idx], row.get(key, ""))
     if rows:
         end_row = start_row + len(rows) - 1
+        workplace_and_position_columns = (1, 2)
         # A workplace may span multiple jobs, but must not merge across job boundaries.
         merge_vertical_same_value_cells(table, start_row, end_row, 1, required_match_column_idxs=(2,))
-        merge_vertical_same_value_cells(table, start_row, end_row, 2, required_match_column_idxs=(1,))
-        # Remaining context values merge independently, but only inside the same
-        # workplace-and-job group.
-        for column in (3, 4, 5, 8):
+        # Detection position, people per shift, and job type may merge only when
+        # their rows belong to the same workplace-and-position group.
+        for column in (2, 3, 4):
+            merge_vertical_same_value_cells(
+                table,
+                start_row,
+                end_row,
+                column,
+                required_match_column_idxs=workplace_and_position_columns,
+            )
+        # Target and exposure type remain within the same workplace-and-position group.
+        for column in (5, 8):
             merge_vertical_same_value_cells(table, start_row, end_row, column, required_match_column_idxs=(1, 2))
+        # Sampling numbers are assigned by workplace, position, and target; show
+        # one vertically merged number instead of repeating it on every project row.
+        merge_vertical_same_value_cells(table, start_row, end_row, 0, required_match_column_idxs=(1, 2, 5))
 
 
 def main() -> int:

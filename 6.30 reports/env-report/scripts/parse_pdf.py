@@ -24,23 +24,13 @@ SURVEY_TABLE_KEYS = [
     "attachments",
 ]
 TABLE3_KEYS = [
-    "sampling_no",
     "workplace",
     "position",
     "people_per_shift",
     "job_type",
     "target",
     "project",
-    "limit_type",
     "exposure_type",
-    "sampling_mode",
-    "time_type",
-    "collector",
-    "device",
-    "flow_rate",
-    "points_per_day",
-    "times_per_day",
-    "days",
     "sampling_time",
     "representative_time",
 ]
@@ -311,7 +301,19 @@ def build_projects(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[st
         projects.extend(split_projects(row.get("project_raw", "")))
     for row in detail_rows:
         projects.extend(split_projects(row.get("project_raw", "")))
-    return dedupe(projects)
+    projects = dedupe(projects)
+    # A detail row can repeat the parenthetical component of an overall-table
+    # factor, e.g. "金属粉尘" after "其他粉尘（金属粉尘）".  The complete
+    # overall factor is the reportable project; do not list both in Table 2.
+    return [
+        project
+        for project in projects
+        if not any(
+            project != candidate
+            and (f"（{project}）" in candidate or f"({project})" in candidate)
+            for candidate in projects
+        )
+    ]
 
 
 def match_overall_row(detail_row: Dict[str, str], overall_rows: List[Dict[str, str]]) -> Dict[str, str] | None:
@@ -339,6 +341,7 @@ def make_table3_row(
     sampling_time: str = "",
     representative_time: str = "",
 ) -> Dict[str, str]:
+    job_type = {"固定作业": "固定", "流动作业": "流动"}.get(job_type, job_type)
     row = {key: "" for key in TABLE3_KEYS}
     row.update(
         {
@@ -393,6 +396,19 @@ def sampling_targets(value: str) -> List[str]:
     return dedupe(target for target in targets if target)
 
 
+def workplace_and_target(workplace: str, target: str) -> tuple[str, str]:
+    """Assign a mobile-work target to its specific workplace when stated."""
+    normalized_target = sampling_target(target)
+    workplaces = [part.strip() for part in re.split(r"[、，,]", workplace or "") if part.strip()]
+    matched_workplace = next(
+        (part for part in sorted(workplaces, key=len, reverse=True) if normalized_target.startswith(part)),
+        "",
+    )
+    if not matched_workplace:
+        return workplace, normalized_target
+    return matched_workplace, normalized_target[len(matched_workplace) :].strip()
+
+
 def build_table3(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     rows: List[Dict[str, str]] = []
     matched_overall_rows: set[int] = set()
@@ -404,20 +420,20 @@ def build_table3(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str,
             overall_row = match_overall_row(detail_row, overall_rows) or {}
             if overall_row in overall_rows:
                 overall_index = overall_rows.index(overall_row)
-                # The overall table is authoritative when it explicitly lists
-                # multiple locations.  Its full hazard-factor list applies to
-                # every listed location, while the detail table supplies timing.
-                if len(sampling_targets(overall_row.get("target", ""))) > 1:
-                    continue
+                # For unstable exposure, the detail table specifies the actual
+                # factor and representative time at each individual location.
                 matched_overall_rows.add(overall_index)
             people_per_shift = overall_row.get("people_per_shift", "")
             overall_job_type = overall_row.get("job_type", "")
             exposure_type = overall_row.get("exposure_type", "")
-            target = sampling_target(detail_row.get("target", ""))
+            detail_workplace, target = workplace_and_target(
+                detail_row.get("workplace", "") or overall_row.get("workplace", ""),
+                detail_row.get("target", ""),
+            )
             for project in projects:
                 rows.append(
                     make_table3_row(
-                        workplace=detail_row.get("workplace", "") or overall_row.get("workplace", ""),
+                        workplace=detail_workplace,
                         position=detail_row.get("position", "") or overall_row.get("position", ""),
                         people_per_shift=people_per_shift,
                         job_type=overall_job_type or detail_row.get("job_type", ""),
@@ -430,18 +446,24 @@ def build_table3(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str,
                 )
     for index, overall_row in enumerate(overall_rows):
         targets = sampling_targets(overall_row.get("target", ""))
-        if index in matched_overall_rows and overall_row.get("exposure_type", "") == PARSING_RULES["detail_preferred_exposure_type"]:
+        # Detailed exposure records supply the location, factor, and
+        # representative time for their matched overall row. Never append the
+        # broad overall row as well, regardless of its exposure-type label.
+        if index in matched_overall_rows:
             continue
         projects = split_projects(overall_row.get("project_raw", ""))
         for target in targets or [sampling_target(overall_row.get("target", ""))]:
+            target_workplace, target_location = workplace_and_target(
+                overall_row.get("workplace", ""), target
+            )
             for project in projects:
                 rows.append(
                     make_table3_row(
-                        workplace=overall_row.get("workplace", ""),
+                        workplace=target_workplace,
                         position=overall_row.get("position", ""),
                         people_per_shift=overall_row.get("people_per_shift", ""),
                         job_type=overall_row.get("job_type", ""),
-                        target=target,
+                        target=target_location,
                         project=project,
                         exposure_type=overall_row.get("exposure_type", ""),
                         representative_time=work_duration(overall_row.get("work_time", "")),
