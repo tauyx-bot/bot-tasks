@@ -24,7 +24,7 @@ from tempfile import TemporaryDirectory
 from xml.etree import ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).parent))
-from extract_attachment1 import calculate_assessment, load_overrides  # noqa: E402
+from extract_attachment1 import A4_JSON_KEY, a4_review_overrides, calculate_assessment  # noqa: E402
 
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -310,6 +310,29 @@ def populate_attachment1(table: ET.Element, fields: dict[str, object]) -> None:
         ])
 
 
+def populate_a4_checkmarks(root: ET.Element, assessment: dict[str, object]) -> None:
+    """Reflect manually reviewed A.4 findings in the direct-assignment table."""
+    a4 = assessment.get("A.4", {})
+    if not isinstance(a4, dict) or a4.get("人工复核") is not True:
+        return
+    selected = {norm(str(value)) for value in a4.get("直接赋值条件", [])}
+    for table in all_tables(root):
+        table_text = text(table)
+        if "防雷安全管理" not in table_text or "雷电灾害历史" not in table_text:
+            continue
+        for cell in table.findall(".//w:tc", NS):
+            pending_symbol: ET.Element | None = None
+            for run in cell.findall(".//w:r", NS):
+                symbol = run.find("w:sym", NS)
+                if symbol is not None:
+                    pending_symbol = symbol
+                    continue
+                label = text(run)
+                if pending_symbol is not None and label:
+                    pending_symbol.set(qn("char"), "00FE" if norm(label) in selected else "00A8")
+                    pending_symbol = None
+
+
 def populate_docx(template: Path, destination: Path, values: dict[str, str], fields: dict[str, object], assessment: dict[str, object]) -> None:
     """Copy template then fill blank value cells and cover-page value runs."""
     with TemporaryDirectory() as tmp:
@@ -322,6 +345,7 @@ def populate_docx(template: Path, destination: Path, values: dict[str, str], fie
         attachment_tables = [table for table in all_tables(root) if "单位名称（盖章）" in text(table) and "经纬度" in text(table)]
         if attachment_tables:
             populate_attachment1(attachment_tables[0], fields)
+        populate_a4_checkmarks(root, assessment)
         populate_assessment_tables(root, assessment)
 
         # Tables: a label cell followed by an empty cell is the template's
@@ -374,17 +398,22 @@ def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def assessment_from_attachment(attachment: dict[str, object], fields: dict[str, object], stem: str) -> dict[str, object]:
+    """Calculate from Attachment 1 and separately parsed A.4 review data."""
+    review = attachment.get(A4_JSON_KEY, {})
+    review = review if isinstance(review, dict) else {}
+    return calculate_assessment(fields, stem, a4_review_overrides(stem, review))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="从附件1 JSON生成assessment JSON和填好的台账DOCX")
     parser.add_argument("--input-dir", type=Path, default=Path("test/try"))
     parser.add_argument("--output-dir", type=Path, default=Path("test/try/results"))
     parser.add_argument("--template", type=Path, default=None)
-    parser.add_argument("--overrides", type=Path, default=Path("test/assessment_overrides.json"))
     args = parser.parse_args()
     template = args.template or args.input_dir / "template.docx"
     if not template.is_file():
         raise SystemExit(f"模板不存在：{template}")
-    overrides = load_overrides(args.overrides)
     inputs = sorted(args.input_dir.glob("*.attachment1.json"))
     if not inputs:
         raise SystemExit(f"未找到附件 JSON：{args.input_dir}")
@@ -395,7 +424,7 @@ def main() -> int:
         if not isinstance(fields, dict):
             raise SystemExit(f"附件字段缺失：{input_path}")
         stem = input_path.name.removesuffix(".attachment1.json")
-        assessment = calculate_assessment(fields, stem, overrides)
+        assessment = assessment_from_attachment(attachment, fields, stem)
         write_json(args.output_dir / f"{stem}.assessment.json", assessment)
         populate_docx(template, args.output_dir / f"{stem}.docx", build_values(fields, assessment, stem), fields, assessment)
         print(f"已生成：{stem}")

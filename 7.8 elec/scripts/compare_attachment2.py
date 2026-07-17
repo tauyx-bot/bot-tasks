@@ -46,6 +46,8 @@ def main() -> int:
     args = parser.parse_args()
     report: dict[str, object] = {}
     for reference in sorted(args.reference_dir.glob("*.docx")):
+        if reference.name.startswith("~$"):
+            continue
         generated = args.generated_dir / reference.name
         if not generated.exists():
             report[reference.name] = {"status": "missing_generated_file"}
