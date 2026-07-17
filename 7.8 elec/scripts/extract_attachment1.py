@@ -256,7 +256,11 @@ def calculate_assessment(fields: dict[str, Any], stem: str, overrides: dict[str,
     chemical_grade = {1: "Ⅲ", 2: "Ⅱ", 3: "I"}.get(m)
     s3 = m
     s_values = [s1, s2, s3]
-    s = max(s_values) if all(value is not None for value in s_values) else None
+    # Formula (A.3) is S = MAX(S1, S2, S3).  A missing factor normally keeps
+    # S indeterminate, except when a known factor has already reached the
+    # table's maximum score (3); then no unresolved 1–3 score can change S.
+    known_s_values = [int(value) for value in s_values if value is not None]
+    s = max(known_s_values) if len(known_s_values) == len(s_values) or max(known_s_values, default=0) == 3 else None
     r = l * s if l is not None and s is not None else None
 
     return {
