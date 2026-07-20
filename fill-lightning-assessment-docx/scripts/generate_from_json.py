@@ -57,6 +57,22 @@ def street_from_address(address: str) -> str:
     return match.group(1).split("区")[-1] if match else ""
 
 
+def set_fill_fonts(run: ET.Element) -> None:
+    """Use FangSong for Latin/digits and Microsoft YaHei for CJK text."""
+    run_properties = run.find("w:rPr", NS)
+    if run_properties is None:
+        run_properties = ET.Element(qn("rPr"))
+        run.insert(0, run_properties)
+    fonts = run_properties.find("w:rFonts", NS)
+    if fonts is None:
+        fonts = ET.Element(qn("rFonts"))
+        run_properties.insert(0, fonts)
+    fonts.set(qn("ascii"), "仿宋")
+    fonts.set(qn("hAnsi"), "仿宋")
+    fonts.set(qn("cs"), "仿宋")
+    fonts.set(qn("eastAsia"), "微软雅黑")
+
+
 def set_paragraph(paragraph: ET.Element, value: str) -> None:
     """Replace a paragraph's displayed value while retaining its first run style."""
     runs = paragraph.findall("w:r", NS)
@@ -66,6 +82,10 @@ def set_paragraph(paragraph: ET.Element, value: str) -> None:
             paragraph.remove(extra)
     else:
         run = ET.SubElement(paragraph, qn("r"))
+        paragraph_run_properties = paragraph.find("w:pPr/w:rPr", NS)
+        if paragraph_run_properties is not None:
+            run.insert(0, copy.deepcopy(paragraph_run_properties))
+    set_fill_fonts(run)
     for node in list(run):
         if node.tag == qn("t"):
             run.remove(node)
@@ -97,6 +117,7 @@ def append_cell(cell: ET.Element, value: str) -> None:
     run = copy.deepcopy(runs[-1]) if runs else ET.SubElement(paragraph, qn("r"))
     if runs:
         paragraph.append(run)
+    set_fill_fonts(run)
     for node in list(run):
         if node.tag in {qn("t"), qn("sym")}:
             run.remove(node)
@@ -190,6 +211,7 @@ def populate_assessment_tables(root: ET.Element, assessment: dict[str, object]) 
     l_scores = {str(item.get("因子", "")).split()[0]: item.get("分值") for item in l_items if isinstance(item, dict)}
     weights = {"L1": 0.2, "L2": 0.4, "L3": 0.4}
     p_total = a2.get("结果") if isinstance(a2, dict) else None
+    l1_score = a3.get("L1分值") if isinstance(a3, dict) else None
     l_grade = a3.get("雷击发生可能性分级") if isinstance(a3, dict) else None
     consequence = a5.get("结果") if isinstance(a5, dict) else None
     chemical_grade = a7.get("化学品固有危险性等级") if isinstance(a7, dict) else None
@@ -213,7 +235,7 @@ def populate_assessment_tables(root: ET.Element, assessment: dict[str, object]) 
                     if score is not None:
                         set_cell(cells[-1], f"{float(score) * weight:g}")
 
-        if "雷击发生可能性分值" in table_text and p_total is not None:
+        if "雷击发生可能性分值" in table_text and p_total is not None and l1_score is not None:
             # The L1 grading table records P, then derives its grade.  Select
             # the row from the calculated P range instead of hard-coding it.
             for row in rows[1:]:
@@ -222,7 +244,14 @@ def populate_assessment_tables(root: ET.Element, assessment: dict[str, object]) 
                     continue
                 bounds = [int(number) for number in re.findall(r"\d+", text(cells[0]))]
                 if len(bounds) == 2 and bounds[0] <= int(p_total) <= bounds[1]:
-                    set_cell(cells[-1], str(p_total))
+                    set_cell(cells[-1], value_text(l1_score))
+                    break
+        if "化学品固有危险性分值" in table_text and chemical_grade:
+            chemical_score = a7.get("化学品固有危险性分值") if isinstance(a7, dict) else None
+            for row in rows[1:]:
+                cells = row.findall("w:tc", NS)
+                if len(cells) >= 2 and text(cells[0]).strip() == value_text(chemical_score) and text(cells[1]).strip() == value_text(chemical_grade):
+                    append_cell(cells[1], "（本次评估结果）")
                     break
         if "综合评估（R）及对应风险" in table_text and risk is not None:
             for row in rows:

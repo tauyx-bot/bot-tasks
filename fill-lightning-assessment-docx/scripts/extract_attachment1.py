@@ -328,7 +328,10 @@ def calculate_assessment(fields: dict[str, Any], stem: str, a4_review: dict[str,
     l2 = DEFAULTS["L2"]
     l3 = DEFAULTS["L3"]
     l_raw = None if l1 is None else 0.2 * l1 + 0.4 * l2 + 0.4 * l3
-    l = 3 if a4_reviewed and a4_conditions else math.ceil(l_raw) if a4_reviewed and l_raw is not None else None
+    # The completed reference forms calculate L from A.1.  A.4 remains an
+    # independently reviewed finding table and is not substituted for the
+    # numeric A.1 result written to the assessment formula.
+    l = math.ceil(l_raw) if a4_reviewed and l_raw is not None else None
 
     s1, s1_selected, s1_error = single_score(options(fields, "风险单元现场最大人数"), {"（0-10）人": 1, "（10-30）人": 2, "30人及以上": 3}, "风险单元现场最大人数")
     s2, s2_selected, s2_error = s2_score(geography, building)
@@ -360,7 +363,7 @@ def calculate_assessment(fields: dict[str, Any], stem: str, a4_review: dict[str,
                 factor("L2 雷电防护装置现状", l2, "默认配置", None, "正常运行"),
                 factor("L3 防雷安全管理制度", l3, "默认配置", None, "完善且执行到位"),
             ],
-            "公式": "L = ceil(0.2*L1 + 0.4*L2 + 0.4*L3)，A.4命中时L=3",
+            "公式": "L = ceil(0.2*L1 + 0.4*L2 + 0.4*L3)",
             "加权原值": l_raw,
             "结果": l,
             "A.4人工复核": a4_reviewed,

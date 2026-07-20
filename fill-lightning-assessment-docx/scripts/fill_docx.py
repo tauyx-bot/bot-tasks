@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import re
@@ -22,10 +23,110 @@ if not (PROJECT_SCRIPTS / "extract_attachment1.py").is_file():
 sys.path.insert(0, str(PROJECT_SCRIPTS))
 
 from extract_attachment1 import calculate_assessment, extract_a4_review, extract_attachment  # noqa: E402
-from generate_from_json import NS, all_tables, append_cell, assessment_scores, set_cell, text, value_text  # noqa: E402
+from generate_from_json import NS, all_tables, assessment_scores, qn, set_cell, set_fill_fonts, text, value_text  # noqa: E402
 
 
 DOCUMENT_XML = "word/document.xml"
+
+
+def set_checkbox(cell: ET.Element, checked: bool) -> bool:
+    """Set every checkbox symbol in a cell and report whether it changed."""
+    changed = False
+    for symbol in cell.findall(".//w:sym", NS):
+        font = symbol.get(qn("font"), "")
+        checked_char, unchecked_char = (("0052", "00A3") if font == "Wingdings 2" else ("00FE", "00A8"))
+        desired = checked_char if checked else unchecked_char
+        if symbol.get(qn("char")) != desired:
+            symbol.set(qn("char"), desired)
+            changed = True
+    return changed
+
+
+def mark_score(row: ET.Element, score: object, option_columns: range) -> int:
+    """Mark the option column whose printed numeric heading equals score."""
+    cells = row.findall("w:tc", NS)
+    if score is None:
+        return 0
+    selected = int(score)
+    edits = 0
+    for index in option_columns:
+        if index >= len(cells):
+            continue
+        edits += int(set_checkbox(cells[index], index == selected))
+    return edits
+
+
+def normalized(value: object) -> str:
+    return re.sub(r"[\s，、,（）()、：:]", "", value_text(value))
+
+
+def mark_a6_options(row: ET.Element, item: dict[str, object]) -> int:
+    """Mark all source selections in A.6, retaining valid multi-selections."""
+    cells = row.findall("w:tc", NS)
+    raw_input = item.get("输入")
+    inputs = raw_input if isinstance(raw_input, list) else [raw_input] if raw_input is not None else []
+    selected_columns: set[int] = set()
+    for value in inputs:
+        wanted = normalized(value)
+        if not wanted:
+            continue
+        for index in range(1, min(4, len(cells))):
+            candidate = normalized(text(cells[index]))
+            if wanted in candidate or candidate in wanted:
+                selected_columns.add(index)
+    if not selected_columns and item.get("分值") is not None:
+        selected_columns.add(int(item["分值"]))
+    edits = 0
+    for index in range(1, min(4, len(cells))):
+        edits += int(set_checkbox(cells[index], index in selected_columns))
+    return edits
+
+
+def set_result_cell(cell: ET.Element, value: object) -> int:
+    desired = value_text(value)
+    if text(cell).strip() == desired:
+        return 0
+    set_cell(cell, desired)
+    return 1
+
+
+def set_run_text(run: ET.Element, value: str, *, filled: bool = False) -> None:
+    """Replace run text without disturbing its existing emphasis and sizing."""
+    for node in list(run):
+        if node.tag == qn("t"):
+            run.remove(node)
+    if filled:
+        set_fill_fonts(run)
+    node = ET.SubElement(run, qn("t"))
+    if value.startswith(" ") or value.endswith(" "):
+        node.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    node.text = value
+
+
+def insert_styled_run(
+    paragraph: ET.Element,
+    after: ET.Element,
+    value: str,
+    *,
+    filled: bool,
+    style_source: ET.Element | None = None,
+) -> ET.Element:
+    run = copy.deepcopy(style_source if style_source is not None else after)
+    set_run_text(run, value, filled=filled)
+    paragraph.insert(list(paragraph).index(after) + 1, run)
+    return run
+
+
+def set_run_bold(run: ET.Element) -> None:
+    properties = run.find("w:rPr", NS)
+    if properties is None:
+        properties = ET.Element(qn("rPr"))
+        run.insert(0, properties)
+    for name in ("b", "bCs"):
+        element = properties.find(f"w:{name}", NS)
+        if element is None:
+            element = ET.SubElement(properties, qn(name))
+        element.set(qn("val"), "1")
 
 
 def target_section(table_text: str) -> str | None:
@@ -46,29 +147,23 @@ def target_section(table_text: str) -> str | None:
 
 
 def fill_target_tables(root: ET.Element, assessment: dict[str, object]) -> tuple[int, set[str]]:
-    """Fill blank result cells and return the edit count and recognized sections."""
+    """Fill scores and check the selected options in Attachment 2 tables."""
     scores = assessment_scores(assessment)
     a1 = assessment.get("A.1", {})
     a2 = assessment.get("A.2", {})
     a3 = assessment.get("A.3", {})
     a5 = assessment.get("A.5", {})
+    a6 = assessment.get("A.6", {})
     a7 = assessment.get("A.7", {})
-    a8 = assessment.get("A.8", {})
     l_items = a1.get("雷击发生可能性", []) if isinstance(a1, dict) else []
     l_scores = {str(item.get("因子", "")).split()[0]: item.get("分值") for item in l_items if isinstance(item, dict)}
     p_total = a2.get("结果") if isinstance(a2, dict) else None
-    l_grade = a3.get("雷击发生可能性分级") if isinstance(a3, dict) else None
-    consequence = a5.get("结果") if isinstance(a5, dict) else None
     chemical_grade = a7.get("化学品固有危险性等级") if isinstance(a7, dict) else None
-    risk = a8.get("R") if isinstance(a8, dict) else None
-    risk_level = a8.get("风险等级") if isinstance(a8, dict) else None
     weights = {"L1": 0.2, "L2": 0.4, "L3": 0.4}
-    result_values = {
-        "雷击发生可能性等级": value_text(l_grade),
-        "后果严重性": value_text(consequence),
-        "化学品固有危险性等级": value_text(chemical_grade),
-        "风险等级": value_text(risk_level),
-        "R值": value_text(risk),
+    a6_items = a6.get("化学品固有危险性因子", []) if isinstance(a6, dict) else []
+    a6_by_code = {
+        str(item.get("因子", "")).split()[0]: item
+        for item in a6_items if isinstance(item, dict)
     }
 
     edits = 0
@@ -86,20 +181,26 @@ def fill_target_tables(root: ET.Element, assessment: dict[str, object]) -> tuple
                 cells = row.findall("w:tc", NS)
                 contents = [text(cell).strip() for cell in cells]
                 for index, code in enumerate(contents[:-1]):
-                    if code in scores and not contents[index + 1]:
-                        set_cell(cells[index + 1], scores[code])
-                        edits += 1
+                    if code not in scores:
+                        continue
+                    edits += set_result_cell(cells[index + 1], scores[code])
+                    if section == "A.2":
+                        edits += mark_score(row, scores[code], range(1, 6))
+                    elif section == "A.5":
+                        edits += mark_score(row, scores[code], range(1, 4))
+                    elif code in a6_by_code:
+                        edits += mark_a6_options(row, a6_by_code[code])
 
         if section == "A.1":
             for row in rows:
                 cells = row.findall("w:tc", NS)
                 contents = [text(cell).strip() for cell in cells]
                 for code, weight in weights.items():
-                    if code in contents and contents and not contents[-1]:
+                    if code in contents and contents:
                         score = l_scores.get(code)
                         if score is not None:
-                            set_cell(cells[-1], f"{float(score) * weight:g}")
-                            edits += 1
+                            edits += set_result_cell(cells[-1], f"{float(score) * weight:g}")
+                            edits += mark_score(row, score, range(1, 4))
 
         if section == "A.3" and p_total is not None:
             for row in rows[1:]:
@@ -107,30 +208,96 @@ def fill_target_tables(root: ET.Element, assessment: dict[str, object]) -> tuple
                 if len(cells) < 3:
                     continue
                 bounds = [int(number) for number in re.findall(r"\d+", text(cells[0]))]
-                if len(bounds) == 2 and bounds[0] <= int(p_total) <= bounds[1] and not text(cells[-1]).strip():
-                    set_cell(cells[-1], str(p_total))
-                    edits += 1
-                    break
+                selected = len(bounds) == 2 and bounds[0] <= int(p_total) <= bounds[1]
+                edits += int(set_checkbox(cells[1], selected))
+                edits += set_result_cell(cells[-1], p_total if selected else "")
 
-        if section == "A.8" and risk is not None:
-            for row in rows:
+        if section == "A.7" and chemical_grade and isinstance(a7, dict):
+            chemical_score = a7.get("化学品固有危险性分值")
+            for row in rows[1:]:
                 cells = row.findall("w:tc", NS)
-                if len(cells) != 1:
+                if len(cells) < 2:
                     continue
-                visible = text(cells[0]).strip()
-                if visible == "综合评估（R）及对应风险":
-                    append_cell(cells[0], f"：R = {risk}，{risk_level}")
-                    edits += 1
-                    break
+                selected = text(cells[0]).strip() == value_text(chemical_score)
+                edits += int(set_checkbox(cells[1], selected))
 
-        for row in rows:
-            cells = row.findall("w:tc", NS)
-            for index, cell in enumerate(cells[:-1]):
-                label = text(cell).replace(" ", "").strip("：:")
-                if label in result_values and result_values[label] and not text(cells[index + 1]).strip():
-                    set_cell(cells[index + 1], result_values[label])
-                    edits += 1
+    return edits, recognized
 
+
+def fill_formula_paragraphs(root: ET.Element, assessment: dict[str, object]) -> tuple[int, set[str]]:
+    """Fill the five printed calculation lines following A.1/A.2/A.5/A.6/A.7."""
+    a1 = assessment.get("A.1", {})
+    a2 = assessment.get("A.2", {})
+    a5 = assessment.get("A.5", {})
+    a6 = assessment.get("A.6", {})
+    a8 = assessment.get("A.8", {})
+    l = a1.get("结果") if isinstance(a1, dict) else None
+    p = a2.get("结果") if isinstance(a2, dict) else None
+    s = a5.get("结果") if isinstance(a5, dict) else None
+    m = a6.get("结果") if isinstance(a6, dict) else None
+    r = a8.get("R") if isinstance(a8, dict) else None
+    values = {
+        "A.1": f"L = W1×L1十W2×L2十W3×L3  ={value_text(l)}……………(A. 1)",
+        "A.2": f"P = P1十 P2 十 P3 十 P4 十 P5 十 P6 = {value_text(p)}",
+        "A.5": f"S=MAX(S1，S2，S3 )={value_text(s)} ………………(A. 3)",
+        "A.6": f"M=MAX(M1，M2，M3，M4 ) ={value_text(m)}   ………………(A. 4)",
+        "R": f"R=L×S={value_text(l)}×{value_text(s)}={value_text(r)}",
+    }
+    edits = 0
+    recognized: set[str] = set()
+    for paragraph in root.findall(".//w:p", NS):
+        compact = re.sub(r"\s+", "", text(paragraph))
+        key = None
+        if compact.startswith("L=W1×L1十W2×L2十W3×L3="):
+            key = "A.1"
+        elif compact.startswith("P=P1十P2十P3十P4十P5十P6="):
+            key = "A.2"
+        elif compact.startswith("S=MAX(S1，S2，S3)"):
+            key = "A.5"
+        elif compact.startswith("M=MAX(M1，M2，M3，M4)="):
+            key = "A.6"
+        elif compact.startswith("R=L×S="):
+            key = "R"
+        if key is not None:
+            recognized.add(key)
+            if text(paragraph) != values[key]:
+                runs = paragraph.findall("w:r", NS)
+                if key == "A.1":
+                    result_run = next(run for run in runs if "？" in text(run))
+                    set_run_text(result_run, text(result_run).replace("？", value_text(l)), filled=True)
+                    result_index = runs.index(result_run)
+                    suffix_run = next(run for run in runs[result_index + 1:] if "…" in text(run))
+                    for run in runs[result_index + 1:runs.index(suffix_run)]:
+                        set_run_text(run, "")
+                    set_run_text(suffix_run, text(suffix_run).replace("………………", "……………"))
+                elif key == "A.2":
+                    result_run = next(run for run in runs if "？" in text(run))
+                    set_run_text(result_run, text(result_run).replace("？", value_text(p)), filled=True)
+                elif key == "A.5":
+                    tail_run = next(run for run in runs if ")" in text(run) and "…" in text(run))
+                    set_run_text(tail_run, " )")
+                    equals_run = insert_styled_run(paragraph, tail_run, "=", filled=False)
+                    result_run = insert_styled_run(paragraph, equals_run, value_text(s), filled=True)
+                    set_run_bold(result_run)
+                    insert_styled_run(
+                        paragraph,
+                        result_run,
+                        " ………………(A. 3)",
+                        filled=False,
+                        style_source=tail_run,
+                    )
+                elif key == "A.6":
+                    result_run = next(run for run in runs if "？" in text(run))
+                    set_run_text(result_run, text(result_run).replace("？", value_text(m)), filled=True)
+                elif key == "R":
+                    base_run = next(run for run in runs if "R=L×S=" in text(run))
+                    insert_styled_run(
+                        paragraph,
+                        base_run,
+                        f"{value_text(l)}×{value_text(s)}={value_text(r)}",
+                        filled=True,
+                    )
+                edits += 1
     return edits, recognized
 
 
@@ -193,6 +360,11 @@ def main() -> int:
         required = {"A.1", "A.2", "A.3", "A.5", "A.6", "A.7", "A.8"}
         if missing := sorted(required - recognized):
             raise ValueError(f"未识别附件2目标表：{', '.join(missing)}")
+        formula_edits, recognized_formulas = fill_formula_paragraphs(root, assessment)
+        edits += formula_edits
+        required_formulas = {"A.1", "A.2", "A.5", "A.6", "R"}
+        if missing := sorted(required_formulas - recognized_formulas):
+            raise ValueError(f"未识别附件2计算公式：{', '.join(missing)}")
         current_non_targets = [
             ET.tostring(table, encoding="utf-8")
             for table in all_tables(root)

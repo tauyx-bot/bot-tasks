@@ -13,7 +13,7 @@ from extract_attachment1 import calculate_assessment, extract_a4_review, extract
 class AttachmentAssessmentTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.data_dir = ROOT / "data"
+        cls.data_dir = ROOT / "test" / "data"
 
     def assessment_for(self, prefix):
         path = next(self.data_dir.glob(f"{prefix}*.docx"))
@@ -38,7 +38,7 @@ class AttachmentAssessmentTests(unittest.TestCase):
         self.assertTrue(any("风险单元现场最大人数" in error for error in assessment["validation_errors"]))
 
     def test_result_files_are_valid_json_pairs(self):
-        results = ROOT / "test" / "results"
+        results = ROOT / "test" / "expected"
         attachment_files = sorted(results.glob("*.attachment1.json"))
         assessment_files = sorted(results.glob("*.assessment.json"))
         self.assertEqual(len(attachment_files), 10)
