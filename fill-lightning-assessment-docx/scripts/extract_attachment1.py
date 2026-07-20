@@ -156,15 +156,6 @@ def extract_a4_review(docx_path: Path) -> dict[str, Any]:
     return {"人工复核": False, "直接赋值条件": []}
 
 
-def a4_review_overrides(stem: str, review: dict[str, Any]) -> dict[str, Any]:
-    """Adapt parsed A.4 review data to calculate_assessment's input."""
-    conditions = review.get("直接赋值条件", [])
-    return {"units": {stem: {
-        "A4_reviewed": review.get("人工复核") is True,
-        "A4_conditions": conditions if isinstance(conditions, list) else [],
-    }}}
-
-
 def number(value: Any) -> float | None:
     match = re.search(r"-?\d+(?:\.\d+)?", str(value))
     if not match:
@@ -298,21 +289,19 @@ def risk_level(value: int | None) -> str | None:
     return "高风险"
 
 
-def calculate_assessment(fields: dict[str, Any], stem: str, overrides: dict[str, Any]) -> dict[str, Any]:
-    defaults = {**DEFAULTS, **overrides.get("defaults", {})}
-    unit = overrides.get("units", {}).get(stem, {})
+def calculate_assessment(fields: dict[str, Any], stem: str, a4_review: dict[str, Any]) -> dict[str, Any]:
     errors: list[str] = []
 
     building = fields.get("区域建筑物", {})
     building = building if isinstance(building, dict) else {}
     geography = options(fields, "周边地理情况")
 
-    p1 = int(unit.get("P1", defaults["P1"]))
+    p1 = DEFAULTS["P1"]
     p2, p2_selected, p2_error = p2_score(geography)
     p3, p3_selected, p3_error = p3_score(building, geography)
     p4 = area_score(number(building.get("面积")))
     p5 = height_score(number(building.get("等效高度")))
-    p6 = int(unit.get("P6", defaults["P6"]))
+    p6 = DEFAULTS["P6"]
     if p2_error:
         errors.append(p2_error)
     if p3_error:
@@ -331,13 +320,13 @@ def calculate_assessment(fields: dict[str, Any], stem: str, overrides: dict[str,
     # design-review documents and inspection reports).  These facts are not
     # present in Attachment 1, so an empty list is valid only after a person
     # has explicitly reviewed the site records.
-    a4_reviewed = unit.get("A4_reviewed") is True
-    raw_a4_conditions = unit.get("A4_conditions", [])
+    a4_reviewed = a4_review.get("人工复核") is True
+    raw_a4_conditions = a4_review.get("直接赋值条件", [])
     a4_conditions = raw_a4_conditions if isinstance(raw_a4_conditions, list) else []
     if not a4_reviewed:
         errors.append("A.4现场勘察/档案审查未人工填写，无法确认是否应直接赋值L=3")
-    l2 = int(unit.get("L2", defaults["L2"]))
-    l3 = int(unit.get("L3", defaults["L3"]))
+    l2 = DEFAULTS["L2"]
+    l3 = DEFAULTS["L3"]
     l_raw = None if l1 is None else 0.2 * l1 + 0.4 * l2 + 0.4 * l3
     l = 3 if a4_reviewed and a4_conditions else math.ceil(l_raw) if a4_reviewed and l_raw is not None else None
 
@@ -368,8 +357,8 @@ def calculate_assessment(fields: dict[str, Any], stem: str, overrides: dict[str,
         "A.1": {
             "雷击发生可能性": [
                 factor("L1 雷击发生可能性等级", l1, "A.2/A.3计算", {"P": p_total, "等级": l1_grade}, l1_grade),
-                factor("L2 雷电防护装置现状", l2, "覆盖配置" if "L2" in unit else "默认配置", None, "正常运行"),
-                factor("L3 防雷安全管理制度", l3, "覆盖配置" if "L3" in unit else "默认配置", None, "完善且执行到位"),
+                factor("L2 雷电防护装置现状", l2, "默认配置", None, "正常运行"),
+                factor("L3 防雷安全管理制度", l3, "默认配置", None, "完善且执行到位"),
             ],
             "公式": "L = ceil(0.2*L1 + 0.4*L2 + 0.4*L3)，A.4命中时L=3",
             "加权原值": l_raw,
@@ -378,12 +367,12 @@ def calculate_assessment(fields: dict[str, Any], stem: str, overrides: dict[str,
         },
         "A.2": {
             "雷击发生可能性因子": [
-                factor("P1 雷击密度", p1, "覆盖配置" if "P1" in unit else "默认配置", None),
+                factor("P1 雷击密度", p1, "默认配置", None),
                 factor("P2 地形地貌", p2, "附件1：周边地理情况", geography, p2_selected, p2_error),
                 factor("P3 相对高度", p3, "附件1：区域建筑物相对高度" if p3 is not None else "附件1信息不足", building.get("相对高度"), p3_selected, p3_error),
                 factor("P4 占地面积", p4, "附件1：区域建筑物面积", building.get("面积")),
                 factor("P5 等效高度", p5, "附件1：区域建筑物等效高度", building.get("等效高度")),
-                factor("P6 防雷分类", p6, "覆盖配置" if "P6" in unit else "默认配置", None),
+                factor("P6 防雷分类", p6, "默认配置", None),
             ],
             "公式": "P = P1 + P2 + P3 + P4 + P5 + P6",
             "结果": p_total,
@@ -420,15 +409,6 @@ def calculate_assessment(fields: dict[str, Any], stem: str, overrides: dict[str,
     }
 
 
-def load_overrides(path: Path | None) -> dict[str, Any]:
-    if path is None or not path.exists():
-        return {}
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError("覆盖配置必须为 JSON 对象")
-    return value
-
-
 def write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -457,7 +437,7 @@ def main() -> int:
                 "附件1：企业基础信息收集表": fields,
                 A4_JSON_KEY: a4_review,
             }
-            assessment = calculate_assessment(fields, docx_path.stem, a4_review_overrides(docx_path.stem, a4_review))
+            assessment = calculate_assessment(fields, docx_path.stem, a4_review)
             write_json(output_dir / f"{docx_path.stem}.attachment1.json", attachment)
             write_json(output_dir / f"{docx_path.stem}.assessment.json", assessment)
             print(f"已写入: {docx_path.stem}")

@@ -24,7 +24,7 @@ from tempfile import TemporaryDirectory
 from xml.etree import ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).parent))
-from extract_attachment1 import A4_JSON_KEY, a4_review_overrides, calculate_assessment  # noqa: E402
+from extract_attachment1 import A4_JSON_KEY, calculate_assessment  # noqa: E402
 
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -402,7 +402,7 @@ def assessment_from_attachment(attachment: dict[str, object], fields: dict[str, 
     """Calculate from Attachment 1 and separately parsed A.4 review data."""
     review = attachment.get(A4_JSON_KEY, {})
     review = review if isinstance(review, dict) else {}
-    return calculate_assessment(fields, stem, a4_review_overrides(stem, review))
+    return calculate_assessment(fields, stem, review)
 
 
 def main() -> int:

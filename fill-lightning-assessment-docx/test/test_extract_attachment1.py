@@ -7,19 +7,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from extract_attachment1 import calculate_assessment, extract_attachment, load_overrides
+from extract_attachment1 import calculate_assessment, extract_a4_review, extract_attachment
 
 
 class AttachmentAssessmentTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.data_dir = ROOT / "data"
-        cls.overrides = load_overrides(ROOT / "test" / "assessment_overrides.json")
 
     def assessment_for(self, prefix):
         path = next(self.data_dir.glob(f"{prefix}*.docx"))
         fields = extract_attachment(path)
-        return fields, calculate_assessment(fields, path.stem, self.overrides)
+        return fields, calculate_assessment(fields, path.stem, extract_a4_review(path))
 
     def test_extracts_variant_unit_name_header(self):
         fields, _ = self.assessment_for("QXRB527")
