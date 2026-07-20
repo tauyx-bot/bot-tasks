@@ -11,6 +11,7 @@ import re
 import shutil
 import sys
 import tempfile
+import unicodedata
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -27,6 +28,36 @@ from generate_from_json import NS, all_tables, assessment_scores, qn, set_cell, 
 
 
 DOCUMENT_XML = "word/document.xml"
+
+
+FORMULA_PATTERNS = (
+    ("A.1", re.compile(r"^L=W1×L1\+W2×L2\+W3×L3=")),
+    ("A.2", re.compile(r"^P=P1\+P2\+P3\+P4\+P5\+P6=")),
+    ("A.5", re.compile(r"^S=MAX\(S1,S2,S3\)(?:=|…|\.|$)")),
+    ("A.6", re.compile(r"^M=MAX\(M1,M2,M3,M4\)=")),
+    ("R", re.compile(r"^R=L×S=")),
+)
+
+
+def canonical_formula_text(value: str) -> str:
+    """Normalize harmless Word/template variants without weakening structure."""
+    canonical = unicodedata.normalize("NFKC", value).upper()
+    canonical = re.sub(r"\s+", "", canonical)
+    canonical = canonical.replace("十", "+").replace("、", ",").replace("，", ",")
+    canonical = canonical.replace("*", "×")
+    # Treat x as multiplication only between formula operands; do not alter
+    # the X in MAX.
+    canonical = re.sub(r"(?<=[A-Z0-9])X(?=[A-Z0-9])", "×", canonical)
+    return canonical
+
+
+def formula_key(value: str) -> str | None:
+    """Classify one formula line by its normalized mathematical structure."""
+    canonical = canonical_formula_text(value)
+    for key, pattern in FORMULA_PATTERNS:
+        if pattern.match(canonical):
+            return key
+    return None
 
 
 def set_checkbox(cell: ET.Element, checked: bool) -> bool:
@@ -246,33 +277,22 @@ def fill_formula_paragraphs(root: ET.Element, assessment: dict[str, object]) -> 
     edits = 0
     recognized: set[str] = set()
     for paragraph in root.findall(".//w:p", NS):
-        compact = re.sub(r"\s+", "", text(paragraph))
-        key = None
-        if compact.startswith("L=W1×L1十W2×L2十W3×L3="):
-            key = "A.1"
-        elif compact.startswith("P=P1十P2十P3十P4十P5十P6="):
-            key = "A.2"
-        elif compact.startswith("S=MAX(S1，S2，S3)"):
-            key = "A.5"
-        elif compact.startswith("M=MAX(M1，M2，M3，M4)="):
-            key = "A.6"
-        elif compact.startswith("R=L×S="):
-            key = "R"
+        key = formula_key(text(paragraph))
         if key is not None:
             recognized.add(key)
             if text(paragraph) != values[key]:
                 runs = paragraph.findall("w:r", NS)
                 if key == "A.1":
-                    result_run = next(run for run in runs if "？" in text(run))
-                    set_run_text(result_run, text(result_run).replace("？", value_text(l)), filled=True)
+                    result_run = next(run for run in runs if "？" in text(run) or "?" in text(run))
+                    set_run_text(result_run, re.sub(r"[？?]", value_text(l), text(result_run)), filled=True)
                     result_index = runs.index(result_run)
                     suffix_run = next(run for run in runs[result_index + 1:] if "…" in text(run))
                     for run in runs[result_index + 1:runs.index(suffix_run)]:
                         set_run_text(run, "")
                     set_run_text(suffix_run, text(suffix_run).replace("………………", "……………"))
                 elif key == "A.2":
-                    result_run = next(run for run in runs if "？" in text(run))
-                    set_run_text(result_run, text(result_run).replace("？", value_text(p)), filled=True)
+                    result_run = next(run for run in runs if "？" in text(run) or "?" in text(run))
+                    set_run_text(result_run, re.sub(r"[？?]", value_text(p), text(result_run)), filled=True)
                 elif key == "A.5":
                     tail_run = next(run for run in runs if ")" in text(run) and "…" in text(run))
                     set_run_text(tail_run, " )")
@@ -287,8 +307,8 @@ def fill_formula_paragraphs(root: ET.Element, assessment: dict[str, object]) -> 
                         style_source=tail_run,
                     )
                 elif key == "A.6":
-                    result_run = next(run for run in runs if "？" in text(run))
-                    set_run_text(result_run, text(result_run).replace("？", value_text(m)), filled=True)
+                    result_run = next(run for run in runs if "？" in text(run) or "?" in text(run))
+                    set_run_text(result_run, re.sub(r"[？?]", value_text(m), text(result_run)), filled=True)
                 elif key == "R":
                     base_run = next(run for run in runs if "R=L×S=" in text(run))
                     insert_styled_run(

@@ -1,4 +1,3 @@
-import re
 import sys
 import unittest
 import zipfile
@@ -10,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from extract_attachment1 import calculate_assessment, extract_a4_review, extract_attachment
-from fill_docx import DOCUMENT_XML, fill_formula_paragraphs, fill_target_tables, target_section
+from fill_docx import DOCUMENT_XML, fill_formula_paragraphs, fill_target_tables, formula_key, target_section
 from generate_from_json import NS, all_tables, qn, text
 
 
@@ -34,17 +33,9 @@ def formula_lines(root):
     found = {}
     for paragraph in root.findall(".//w:p", NS):
         visible = text(paragraph)
-        compact = re.sub(r"\s+", "", visible)
-        if compact.startswith("L=W1×L1十W2×L2十W3×L3="):
-            found["A.1"] = visible
-        elif compact.startswith("P=P1十P2十P3十P4十P5十P6="):
-            found["A.2"] = visible
-        elif compact.startswith("S=MAX(S1，S2，S3)"):
-            found["A.5"] = visible
-        elif compact.startswith("M=MAX(M1，M2，M3，M4)="):
-            found["A.6"] = visible
-        elif compact.startswith("R=L×S="):
-            found["R"] = visible
+        key = formula_key(visible)
+        if key is not None:
+            found[key] = visible
     return found
 
 
@@ -102,6 +93,20 @@ class FillDocxTests(unittest.TestCase):
         self.assertGreater(self.table_edits, 0)
         self.assertEqual(self.formula_edits, 5)
 
+    def test_formula_detection_normalizes_common_template_variants(self):
+        variants = {
+            " L = W1 * L1 + W2 x L2 + W3 × L3 = ? ": "A.1",
+            "Ｐ＝Ｐ１＋Ｐ２＋Ｐ３＋Ｐ４＋Ｐ５＋Ｐ６＝？": "A.2",
+            "s = max（S1、S2，S3）": "A.5",
+            "M=MAX(M1 + M2 + M3 + M4) = ?": None,
+            "M = MAX（M1, M2, M3, M4） = ?": "A.6",
+            "r = l x s =": "R",
+            "1、风险（R）计算：R = L × S": None,
+        }
+        for value, expected in variants.items():
+            with self.subTest(value=value):
+                self.assertEqual(formula_key(value), expected)
+
     def test_checkbox_selections_match_completed_reference(self):
         for name in ("A.1", "A.2", "A.3", "A.5", "A.6", "A.7"):
             with self.subTest(section=name):
@@ -126,7 +131,7 @@ class FillDocxTests(unittest.TestCase):
     def test_inserted_text_uses_requested_latin_and_cjk_fonts(self):
         paragraph = next(
             paragraph for paragraph in self.root.findall(".//w:p", NS)
-            if re.sub(r"\s+", "", text(paragraph)).startswith("R=L×S=")
+            if formula_key(text(paragraph)) == "R"
         )
         run = next(run for run in paragraph.findall("w:r", NS) if "1×3=3" in text(run))
         fonts = run.find("w:rPr/w:rFonts", NS)
