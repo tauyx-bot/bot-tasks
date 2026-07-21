@@ -186,6 +186,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "生产车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -204,6 +205,7 @@
     {
       "job_group_id": "overall:1",
       "job_workplace": "生产车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -222,6 +224,7 @@
     {
       "job_group_id": "overall:2",
       "job_workplace": "生产车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -240,6 +243,7 @@
     {
       "job_group_id": "overall:2",
       "job_workplace": "生产车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",

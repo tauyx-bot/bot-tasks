@@ -14,6 +14,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import generate_report  # noqa: E402
 import parse_pdf  # noqa: E402
+import build_oel_database  # noqa: E402
+import build_physical_factor_database  # noqa: E402
 
 
 class MobileJobRulesTest(unittest.TestCase):
@@ -26,7 +28,290 @@ class MobileJobRulesTest(unittest.TestCase):
         cls.collector_index = generate_report.load_collector_index(
             ROOT / "knowledge" / "collector.json"
         )
+        cls.oel_index = generate_report.load_oel_index(
+            ROOT / "knowledge" / "oel_limits.json"
+        )
+        cls.physical_factor_index = generate_report.load_physical_factor_index(
+            ROOT / "knowledge" / "physical_factors.json"
+        )
         parse_pdf.PARSING_RULES = cls.rules["parsing"]
+
+    def test_limit_type_is_derived_from_gbz_oels_and_sampling_mode(self) -> None:
+        cases = [
+            ("甲苯", "定点", "PC-STEL"),
+            ("甲苯", "个体", "PC-TWA"),
+            ("甲醛", "定点", "MAC"),
+            ("二异丁基甲酮", "定点", "PE"),
+            ("二异丁基甲酮", "个体", "PC-TWA"),
+            ("其他粉尘", "定点", "PE"),
+            ("其他粉尘", "个体", "PC-TWA"),
+        ]
+        for project, sampling_mode, expected in cases:
+            with self.subTest(project=project, sampling_mode=sampling_mode):
+                rule = self.rule_index[generate_report.normalize_lookup(project)]
+                self.assertEqual(
+                    expected,
+                    generate_report.limit_type_for(
+                        project,
+                        sampling_mode,
+                        rule["collector"],
+                        True,
+                        self.rules,
+                        rule,
+                        self.oel_index,
+                    ),
+                )
+
+    def test_physical_factor_limit_type_uses_slash_without_missing_oel(self) -> None:
+        source = {
+            "job_group_id": "overall:0",
+            "job_workplace": "生产车间",
+            "job_representative_time": "8h",
+            "workplace": "生产车间",
+            "position": "操作工",
+            "people_per_shift": "1",
+            "workstation_count": "1",
+            "job_type": "固定",
+            "target": "设备工位",
+            "project": "噪声",
+            "exposure_type": "②",
+            "representative_time": "8h",
+        }
+        rows, missing = generate_report.build_table3(
+            [source],
+            self.collector_index,
+            self.rule_index,
+            "定期检测",
+            self.rules,
+            self.oel_index,
+        )
+        self.assertEqual([], missing)
+        self.assertEqual(1, len(rows))
+        self.assertEqual("/", rows[0]["limit_type"])
+
+    def test_all_gbz_22_factor_names_and_aliases_use_slash_limit_type(self) -> None:
+        factor_names = json.loads(
+            (ROOT / "knowledge" / "physical_factors.json").read_text(encoding="utf-8")
+        )
+        chemical_rule = {"category": "chemical", "collector": "活性炭管"}
+        for project in factor_names:
+            with self.subTest(project=project):
+                self.assertTrue(
+                    generate_report.is_physical_factor(
+                        project,
+                        chemical_rule,
+                        self.physical_factor_index,
+                    )
+                )
+                self.assertEqual(
+                    "/",
+                    generate_report.limit_type_for(
+                        project,
+                        "定点",
+                        "活性炭管",
+                        True,
+                        self.rules,
+                        chemical_rule,
+                        self.oel_index,
+                    ),
+                )
+
+    def test_physical_factor_format_variants_match_without_false_chemical_hit(self) -> None:
+        for project in (
+            "1HZ～100KHZ电场",
+            "噪声（稳态）",
+            "WBGT（湿球黑球温度）",
+            "紫外线(人工紫外辐射)",
+        ):
+            with self.subTest(project=project):
+                self.assertTrue(generate_report.is_physical_factor(project))
+        self.assertFalse(generate_report.is_physical_factor("甲苯"))
+
+    def test_gbz_22_alias_without_rule_is_not_reported_as_missing_oel(self) -> None:
+        source = {
+            "job_group_id": "overall:0",
+            "job_workplace": "焊接车间",
+            "job_representative_time": "8h",
+            "workplace": "焊接车间",
+            "position": "焊工",
+            "people_per_shift": "1",
+            "workstation_count": "1",
+            "job_type": "固定",
+            "target": "焊接工位",
+            "project": "电焊弧光",
+            "exposure_type": "②",
+            "representative_time": "8h",
+        }
+        rows, missing = generate_report.build_table3(
+            [source],
+            self.collector_index,
+            self.rule_index,
+            "定期检测",
+            self.rules,
+            self.oel_index,
+        )
+        self.assertEqual([], missing)
+        self.assertEqual("/", rows[0]["limit_type"])
+        self.assertEqual("定点", rows[0]["sampling_mode"])
+
+    def test_committed_physical_factor_database_matches_gbz_22_source(self) -> None:
+        committed = json.loads(
+            (ROOT / "knowledge" / "physical_factors.json").read_text(encoding="utf-8")
+        )
+        rebuilt = build_physical_factor_database.build_database(
+            ROOT / "knowledge" / "物理危害.md"
+        )
+        self.assertEqual(committed, rebuilt)
+
+    def test_oel_lookup_ignores_chinese_english_and_mixed_parentheses(self) -> None:
+        base = generate_report.normalize_lookup("碳酰氯")
+        for variant in (
+            "碳酰氯(光气)",
+            "碳酰氯（光气）",
+            "碳酰氯（光气)",
+            "碳酰氯(光气）",
+            "碳酰氯((光气))",
+        ):
+            with self.subTest(variant=variant):
+                self.assertEqual(base, generate_report.normalize_lookup(variant))
+                self.assertEqual(
+                    {"MAC"},
+                    generate_report.oel_limit_types(variant, self.oel_index),
+                )
+        self.assertEqual(
+            {"MAC"},
+            generate_report.oel_limit_types("碳酰氯", self.oel_index),
+        )
+
+    def test_oel_lookup_handles_unbalanced_nested_source_parentheses(self) -> None:
+        source_name = "二氯二苯基三氯乙烷((滴滴涕,DDT)"
+        bare_name = "二氯二苯基三氯乙烷"
+        self.assertEqual(
+            generate_report.normalize_lookup(bare_name),
+            generate_report.normalize_lookup(source_name),
+        )
+        self.assertEqual(
+            generate_report.oel_limit_types(source_name, self.oel_index),
+            generate_report.oel_limit_types(bare_name, self.oel_index),
+        )
+
+    def test_gbz_database_never_defines_mac_and_pc_stel_together(self) -> None:
+        unique_entries = {id(entry): entry for entry in self.oel_index.values()}.values()
+        for entry in unique_entries:
+            limit_types = set(entry["limit_types"])
+            self.assertFalse(
+                {"MAC", "PC-STEL"} <= limit_types,
+                entry["project"],
+            )
+
+    def test_committed_oel_database_matches_markdown_source(self) -> None:
+        committed = json.loads(
+            (ROOT / "knowledge" / "oel_limits.json").read_text(encoding="utf-8")
+        )
+        rebuilt = build_oel_database.build_database(
+            ROOT / "knowledge" / "化学有害因素.md"
+        )
+        self.assertEqual(committed, rebuilt)
+
+    def test_dust_enumeration_expands_but_condition_does_not(self) -> None:
+        database = json.loads(
+            (ROOT / "knowledge" / "oel_limits.json").read_text(encoding="utf-8")
+        )
+        for project in (
+            "人造矿物纤维绝热棉粉尘",
+            "玻璃棉粉尘",
+            "矿渣棉粉尘",
+            "岩棉粉尘",
+        ):
+            self.assertEqual(["PC-TWA"], database[project])
+        self.assertEqual(["PC-TWA"], database["滑石粉尘"])
+        self.assertNotIn("滑石粉尘(游离 SiO2含量<10%)", database)
+        self.assertNotIn("游离 SiO2含量<10%", database)
+
+    def test_semantic_parenthetical_aliases_are_expanded(self) -> None:
+        database = json.loads(
+            (ROOT / "knowledge" / "oel_limits.json").read_text(encoding="utf-8")
+        )
+        alias_groups = (
+            ("碳酰氯", "光气"),
+            ("甲乙酮", "2-丁酮", "丁酮"),
+            ("二氯二苯基三氯乙烷", "滴滴涕", "DDT"),
+            ("沉淀SiO2", "白炭黑", "白炭黑粉尘"),
+            ("大理石粉尘", "碳酸钙", "碳酸钙粉尘"),
+            ("三氧化铬、铬酸盐、重铬酸盐", "三氧化铬", "铬酸盐", "重铬酸盐"),
+            ("铝金属、铝合金粉尘", "铝金属粉尘", "铝合金粉尘"),
+        )
+        for aliases in alias_groups:
+            expected = database[aliases[0]]
+            for alias in aliases[1:]:
+                self.assertEqual(expected, database[alias], alias)
+
+    def test_structural_parentheses_are_preserved(self) -> None:
+        database = json.loads(
+            (ROOT / "knowledge" / "oel_limits.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            ["PC-TWA", "PC-STEL"],
+            database["双(巯基乙酸)二辛基锡"],
+        )
+        self.assertNotIn("双二辛基锡", database)
+
+    def test_mac_only_factor_does_not_create_an_individual_twa_row(self) -> None:
+        source = {
+            "job_group_id": "overall:0",
+            "job_workplace": "甲醛车间",
+            "job_representative_time": "8h",
+            "workplace": "甲醛车间",
+            "position": "操作工",
+            "people_per_shift": "1",
+            "workstation_count": "1",
+            "job_type": "固定",
+            "target": "甲醛工位",
+            "project": "甲醛",
+            "exposure_type": "①",
+            "representative_time": "8h",
+        }
+        rows, missing = generate_report.build_table3(
+            [source],
+            self.collector_index,
+            self.rule_index,
+            "定期检测",
+            self.rules,
+            self.oel_index,
+        )
+        self.assertEqual([], missing)
+        self.assertEqual(1, len(rows))
+        self.assertEqual("定点", rows[0]["sampling_mode"])
+        self.assertEqual("MAC", rows[0]["limit_type"])
+
+    def test_twa_only_factor_uses_pe_for_point_and_twa_for_individual(self) -> None:
+        source = {
+            "job_group_id": "overall:0",
+            "job_workplace": "涂布车间",
+            "job_representative_time": "8h",
+            "workplace": "涂布车间",
+            "position": "操作工",
+            "people_per_shift": "1",
+            "workstation_count": "1",
+            "job_type": "固定",
+            "target": "涂布工位",
+            "project": "二异丁基甲酮",
+            "exposure_type": "②",
+            "representative_time": "8h",
+        }
+        rows, missing = generate_report.build_table3(
+            [source],
+            self.collector_index,
+            self.rule_index,
+            "定期检测",
+            self.rules,
+            self.oel_index,
+        )
+        self.assertEqual([], missing)
+        self.assertEqual(
+            {("定点", "PE"), ("个体", "PC-TWA")},
+            {(row["sampling_mode"], row["limit_type"]) for row in rows},
+        )
 
     def build_rows(self, projects_by_detail: list[tuple[str, str, str]]) -> list[dict[str, str]]:
         overall = [
@@ -73,7 +358,10 @@ class MobileJobRulesTest(unittest.TestCase):
         )
         individual = [row for row in rows if row["sampling_mode"] == "个体"]
         self.assertEqual(1, len(individual))
-        self.assertEqual("1F开料车间、2F生产车间", individual[0]["workplace"])
+        self.assertEqual(
+            "1F开料车间开料工位、2F生产车间粘膜工位、2F生产车间过膜工位",
+            individual[0]["workplace"],
+        )
         self.assertEqual("劳动者", individual[0]["target"])
         self.assertEqual("8h", individual[0]["representative_time"])
         self.assertEqual("4h", individual[0]["sampling_time"])
@@ -301,8 +589,8 @@ class MobileJobRulesTest(unittest.TestCase):
         normalized = generate_report.normalize_lookup("戊烷（全部异构体）")
         self.assertEqual("戊烷", normalized)
         self.assertEqual(
-            "GBZ/T 300.60—2017",
-            self.rule_index[normalized]["basis"],
+            "GBZ/T300.60—2017",
+            self.rule_index[normalized]["basis"].replace(" ", ""),
         )
         collector = generate_report.collector_for_project(
             "戊烷（全部异构体）",
@@ -314,13 +602,134 @@ class MobileJobRulesTest(unittest.TestCase):
         self.assertEqual("活性炭管，溶剂解吸型", collector["collector"])
         self.assertEqual("防爆大气采样器QC-4S", collector["device"])
         self.assertEqual(
-            "正戊烷、异戊烷",
+            "解吸液:二硫化碳",
+            self.rule_index[normalized]["analysis_group"],
+        )
+        self.assertEqual(
+            "戊烷（全部异构体）",
             generate_report.display_project_name(
                 "戊烷（全部异构体）",
                 self.rule_index,
             ),
         )
 
+    def test_project_flow_rate_uses_time_type_from_rule_data(self) -> None:
+        rule = self.rule_index[generate_report.normalize_lookup("环己酮")]
+        for mode, time_type, expected in (
+            ("定点", "短时间", "0.3"),
+            ("个体", "长时间", "0.05"),
+        ):
+            with self.subTest(mode=mode):
+                self.assertEqual(
+                    expected,
+                    generate_report.flow_rate_for_project(
+                        "环己酮", mode, time_type, self.rule_index, "wrong"
+                    ),
+                )
+        self.assertEqual(
+            "15~40",
+            generate_report.flow_rate_for_project(
+                "其他粉尘", "定点", "短时间", self.rule_index, "wrong"
+            ),
+        )
+
+    def test_different_analysis_treatments_do_not_merge(self) -> None:
+        rule_index = {
+            "苯": {
+                **self.rule_index["苯"],
+                "analysis_group": "解吸液:二硫化碳",
+            },
+            "戊烷": {
+                **self.rule_index["戊烷"],
+                "analysis_group": "解吸液:含甲醇的溶液",
+            },
+        }
+        sources = [
+            {
+                "job_group_id": "overall:0",
+                "job_workplace": "车间",
+                "job_representative_time": "8h",
+                "workplace": "车间",
+                "position": "操作工",
+                "people_per_shift": "1",
+                "workstation_count": "1",
+                "job_type": "固定",
+                "target": "操作工位",
+                "project": project,
+                "exposure_type": "②",
+                "representative_time": "8h",
+            }
+            for project in ("苯", "戊烷")
+        ]
+        rows, _missing = generate_report.build_table3(
+            sources,
+            self.collector_index,
+            rule_index,
+            "定期检测",
+            self.rules,
+            self.oel_index,
+        )
+        self.assertFalse(any("、" in row["project"] for row in rows))
+
+    def test_mobile_work_content_keeps_activity_and_short_final_detail_row(self) -> None:
+        self.assertEqual(
+            "加油工位加油、卸油工位卸油、营业厅收银",
+            parse_pdf.detail_work_content(
+                "加油工位/卸油工位；营业厅",
+                "加油、卸油\n收银",
+            ),
+        )
+        self.assertEqual(
+            ["加油工位", "卸油工位", "营业厅收银"],
+            parse_pdf.sampling_targets(
+                "加油工位加油，卸油工位卸油;营业厅收银"
+            ),
+        )
+        self.assertEqual(
+            ["加油工位", "卸油工位", "营业厅"],
+            parse_pdf.sampling_targets("加油工位/卸油工位；营业厅"),
+        )
+        self.assertEqual(
+            ["CNC工位"],
+            parse_pdf.sampling_targets("CNC工位/操作CNC"),
+        )
+        raw_details = [
+            [
+                "刘燕霞",
+                "加油区、卸油区、营业厅",
+                "加油工",
+                "加油时",
+                "加油工位",
+                "加油",
+                "苯",
+                "6h",
+                "间断加油",
+            ],
+            ["续页干扰文字", "收银时", "营业厅", "收银", "/", "1.5h", "间断收银"],
+            ["卸油时", "卸油工位", "卸油", "苯、高温", "0.5h"],
+        ]
+        details = parse_pdf.parse_detail_rows(raw_details)
+        self.assertEqual(3, len(details))
+        overall = {
+            "workplace": "加油区、卸油区、营业厅",
+            "position": "加油工",
+            "people_per_shift": "2",
+            "work_time": "8:00-16:00",
+            "job_type": "流动作业",
+            "target": "加油工位加油卸油工位卸油营业厅收银",
+            "project_raw": "苯、高温",
+            "exposure_type": "②",
+            "daily_exposure": "8.00",
+        }
+        rows = parse_pdf.build_table3([overall], details)
+        self.assertEqual(
+            {("加油区", "加油工位"), ("卸油区", "卸油工位")},
+            {(row["workplace"], row["target"]) for row in rows},
+        )
+        self.assertEqual(
+            {"加油工位加油、卸油工位卸油、营业厅收银"},
+            {row["job_work_content"] for row in rows},
+        )
     def test_fixed_stable_chemical_uses_individual_sample_only(self) -> None:
         source = {
             "job_group_id": "overall:0",

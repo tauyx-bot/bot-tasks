@@ -23,7 +23,7 @@
     "point_sampling_time": "15min",
     "individual_sampling_time": "3h",
     "dust_filter_keyword": "丙纶滤膜",
-    "pc_limit_types": ["PC-TWA", "PC-STEL"],
+    "limit_types": ["PC-TWA", "PC-STEL", "MAC", "PE"],
     "daily_points_by_people_per_shift": [
       {"maximum_people": 3, "points": 1},
       {"maximum_people": 10, "points": 2},

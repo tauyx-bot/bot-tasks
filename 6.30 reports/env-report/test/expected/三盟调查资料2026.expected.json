@@ -350,6 +350,7 @@
     {
       "job_group_id": "overall:1",
       "job_workplace": "1F开料车间、2F生产车间",
+      "job_work_content": "1F开料车间开料工位开料、2F生产车间粘膜工位粘膜、2F生产车间过膜工位过膜",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -368,6 +369,7 @@
     {
       "job_group_id": "overall:1",
       "job_workplace": "1F开料车间、2F生产车间",
+      "job_work_content": "1F开料车间开料工位开料、2F生产车间粘膜工位粘膜、2F生产车间过膜工位过膜",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -386,6 +388,7 @@
     {
       "job_group_id": "overall:1",
       "job_workplace": "1F开料车间、2F生产车间",
+      "job_work_content": "1F开料车间开料工位开料、2F生产车间粘膜工位粘膜、2F生产车间过膜工位过膜",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -404,6 +407,7 @@
     {
       "job_group_id": "overall:1",
       "job_workplace": "1F开料车间、2F生产车间",
+      "job_work_content": "1F开料车间开料工位开料、2F生产车间粘膜工位粘膜、2F生产车间过膜工位过膜",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -422,6 +426,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "2F生产车间",
+      "job_work_content": "调墨工位调墨、丝印工位丝印、洗网工位洗网",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -440,6 +445,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "2F生产车间",
+      "job_work_content": "调墨工位调墨、丝印工位丝印、洗网工位洗网",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -458,6 +464,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "2F生产车间",
+      "job_work_content": "调墨工位调墨、丝印工位丝印、洗网工位洗网",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -476,6 +483,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "2F生产车间",
+      "job_work_content": "调墨工位调墨、丝印工位丝印、洗网工位洗网",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -494,6 +502,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "2F生产车间",
+      "job_work_content": "调墨工位调墨、丝印工位丝印、洗网工位洗网",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -512,6 +521,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "2F生产车间",
+      "job_work_content": "调墨工位调墨、丝印工位丝印、洗网工位洗网",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -530,6 +540,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "2F生产车间",
+      "job_work_content": "调墨工位调墨、丝印工位丝印、洗网工位洗网",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -548,6 +559,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "2F生产车间",
+      "job_work_content": "调墨工位调墨、丝印工位丝印、洗网工位洗网",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -566,6 +578,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "2F生产车间",
+      "job_work_content": "调墨工位调墨、丝印工位丝印、洗网工位洗网",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -584,6 +597,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "2F生产车间",
+      "job_work_content": "调墨工位调墨、丝印工位丝印、洗网工位洗网",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -602,6 +616,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "2F生产车间",
+      "job_work_content": "调墨工位调墨、丝印工位丝印、洗网工位洗网",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -620,6 +635,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "2F生产车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -638,6 +654,7 @@
     {
       "job_group_id": "overall:2",
       "job_workplace": "2F生产车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -656,6 +673,7 @@
     {
       "job_group_id": "overall:3",
       "job_workplace": "2F生产车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",

@@ -430,6 +430,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "5F车间",
+      "job_work_content": "刷胶工位使用PU刷胶、前处理工位使用前处理水",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -448,6 +449,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "5F车间",
+      "job_work_content": "刷胶工位使用PU刷胶、前处理工位使用前处理水",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -466,6 +468,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "5F车间",
+      "job_work_content": "刷胶工位使用PU刷胶、前处理工位使用前处理水",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -484,6 +487,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "5F车间",
+      "job_work_content": "刷胶工位使用PU刷胶、前处理工位使用前处理水",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -502,6 +506,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "5F车间",
+      "job_work_content": "刷胶工位使用PU刷胶、前处理工位使用前处理水",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -520,6 +525,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "5F车间",
+      "job_work_content": "刷胶工位使用PU刷胶、前处理工位使用前处理水",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -538,6 +544,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "5F车间",
+      "job_work_content": "刷胶工位使用PU刷胶、前处理工位使用前处理水",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -556,6 +563,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "5F车间",
+      "job_work_content": "刷胶工位使用PU刷胶、前处理工位使用前处理水",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -574,6 +582,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "5F车间",
+      "job_work_content": "刷胶工位使用PU刷胶、前处理工位使用前处理水",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -592,6 +601,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "5F车间",
+      "job_work_content": "刷胶工位使用PU刷胶、前处理工位使用前处理水",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -610,6 +620,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "5F车间",
+      "job_work_content": "刷胶工位使用PU刷胶、前处理工位使用前处理水",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -628,6 +639,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "5F车间",
+      "job_work_content": "刷胶工位使用PU刷胶、前处理工位使用前处理水",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -646,6 +658,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "5F车间",
+      "job_work_content": "刷胶工位使用PU刷胶、前处理工位使用前处理水",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -664,6 +677,7 @@
     {
       "job_group_id": "overall:1",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -682,6 +696,7 @@
     {
       "job_group_id": "overall:2",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -700,6 +715,7 @@
     {
       "job_group_id": "overall:2",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -718,6 +734,7 @@
     {
       "job_group_id": "overall:2",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -736,6 +753,7 @@
     {
       "job_group_id": "overall:2",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -754,6 +772,7 @@
     {
       "job_group_id": "overall:2",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -772,6 +791,7 @@
     {
       "job_group_id": "overall:2",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -790,6 +810,7 @@
     {
       "job_group_id": "overall:2",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -808,6 +829,7 @@
     {
       "job_group_id": "overall:3",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -826,6 +848,7 @@
     {
       "job_group_id": "overall:3",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -844,6 +867,7 @@
     {
       "job_group_id": "overall:3",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -862,6 +886,7 @@
     {
       "job_group_id": "overall:3",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -880,6 +905,7 @@
     {
       "job_group_id": "overall:3",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -898,6 +924,7 @@
     {
       "job_group_id": "overall:3",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -916,6 +943,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -934,6 +962,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -952,6 +981,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -970,6 +1000,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -988,6 +1019,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -1006,6 +1038,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -1024,6 +1057,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "5F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -1042,6 +1076,7 @@
     {
       "job_group_id": "overall:5",
       "job_workplace": "6F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -1060,6 +1095,7 @@
     {
       "job_group_id": "overall:5",
       "job_workplace": "6F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -1078,6 +1114,7 @@
     {
       "job_group_id": "overall:6",
       "job_workplace": "6F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -1096,6 +1133,7 @@
     {
       "job_group_id": "overall:6",
       "job_workplace": "6F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -1114,6 +1152,7 @@
     {
       "job_group_id": "overall:6",
       "job_workplace": "6F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -1132,6 +1171,7 @@
     {
       "job_group_id": "overall:6",
       "job_workplace": "6F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -1150,6 +1190,7 @@
     {
       "job_group_id": "overall:6",
       "job_workplace": "6F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -1168,6 +1209,7 @@
     {
       "job_group_id": "overall:7",
       "job_workplace": "6F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -1186,6 +1228,7 @@
     {
       "job_group_id": "overall:8",
       "job_workplace": "6F车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",

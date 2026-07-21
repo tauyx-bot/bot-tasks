@@ -33,6 +33,7 @@ SURVEY_TABLE_KEYS = [
 TABLE3_KEYS = [
     "job_group_id",
     "job_workplace",
+    "job_work_content",
     "job_representative_time",
     "source_job_type",
     "job_type_inference_reason",
@@ -49,6 +50,8 @@ TABLE3_KEYS = [
     "representative_time",
 ]
 SPLIT_PATTERN = re.compile(r"[、，,；;\n]+")
+WORK_CONTENT_SPLIT_PATTERN = re.compile(r"\s*(?:、|，|,|；|;|/|\n)+\s*")
+LOCATION_MARKERS = ("工位", "岗位", "车间", "区域", "区", "营业厅", "库", "房")
 PARSING_RULES: Dict[str, Any] = {}
 
 
@@ -418,6 +421,21 @@ def parse_detail_rows(rows: List[List[str]]) -> List[Dict[str, str]]:
                     "frequency": values[5],
                 }
             )
+            continue
+        if len(values) == 5:
+            parsed.append(
+                {
+                    "worker_name": context["worker_name"],
+                    "workplace": context["workplace"],
+                    "position": context["position"],
+                    "trigger": values[0],
+                    "target": values[1],
+                    "job_type": values[2],
+                    "project_raw": values[3],
+                    "duration": values[4],
+                    "frequency": "",
+                }
+            )
     return parsed
 
 
@@ -468,6 +486,7 @@ def match_overall_row(detail_row: Dict[str, str], overall_rows: List[Dict[str, s
 def make_table3_row(
     job_group_id: str,
     job_workplace: str,
+    job_work_content: str,
     job_representative_time: str,
     source_job_type: str,
     job_type_inference_reason: str,
@@ -489,6 +508,7 @@ def make_table3_row(
         {
             "job_group_id": job_group_id,
             "job_workplace": job_workplace,
+            "job_work_content": job_work_content,
             "job_representative_time": job_representative_time,
             "source_job_type": source_job_type,
             "job_type_inference_reason": job_type_inference_reason,
@@ -575,6 +595,18 @@ def inferred_job_context(
         for detail in detail_rows
         if match_overall_row(detail, overall_rows) is overall_row
     ]
+    work_contents = dedupe(
+        detail_work_content(detail.get("target", ""), detail.get("job_type", ""))
+        for detail in matched_details
+    )
+    overall_work_content = normalize_text(overall_row.get("target", ""))
+    work_contents.sort(
+        key=lambda content: (
+            overall_work_content.find(content)
+            if content and content in overall_work_content
+            else len(overall_work_content)
+        )
+    )
     duration_by_target: Dict[str, float] = {}
     for detail in matched_details:
         target = sampling_target(detail.get("target", ""))
@@ -602,6 +634,7 @@ def inferred_job_context(
         "source_job_type": source_job_type,
         "job_type": effective_job_type,
         "job_type_inference_reason": inference_reason,
+        "job_work_content": "、".join(work_contents),
     }
 
 
@@ -622,9 +655,49 @@ def sampling_target(value: str) -> str:
     return target[:workbench_end]
 
 
+def detail_work_content(target: str, activity: str) -> str:
+    """Combine the detailed location and its work content without duplication."""
+    locations = [
+        normalize_text(part)
+        for part in WORK_CONTENT_SPLIT_PATTERN.split(target or "")
+        if normalize_text(part) not in {"", "/"}
+    ]
+    actions = [
+        normalize_text(part)
+        for part in WORK_CONTENT_SPLIT_PATTERN.split(activity or "")
+        if normalize_text(part) not in {"", "/"}
+    ]
+    if len(locations) > 1 and len(locations) == len(actions):
+        return "、".join(
+            detail_work_content(location, action)
+            for location, action in zip(locations, actions)
+        )
+    location = "、".join(locations) or normalize_text(target)
+    action = "、".join(actions) or normalize_text(activity)
+    if not action or action in {"/", "固定", "固定作业", "流动", "流动作业"}:
+        return location
+    if location.endswith(action):
+        return location
+    return f"{location}{action}"
+
+
 def sampling_targets(value: str) -> List[str]:
     """Extract every explicit sampling location from an overall exposure row."""
-    targets = [sampling_target(part) for part in re.split(r"[；;]", value or "")]
+    targets: List[str] = []
+    previous_was_location = False
+    for raw_part in WORK_CONTENT_SPLIT_PATTERN.split(value or ""):
+        part = normalize_text(raw_part)
+        if not part:
+            continue
+        is_location = any(marker in part for marker in LOCATION_MARKERS)
+        # PDF cells often wrap "location/action" across a slash or newline.
+        # A standalone non-location token immediately after a location is its
+        # work content, not a second sampling point.
+        if previous_was_location and not is_location:
+            previous_was_location = False
+            continue
+        targets.append(sampling_target(part))
+        previous_was_location = is_location
     return dedupe(target for target in targets if target)
 
 
@@ -677,15 +750,28 @@ def workstation_context(
 
 def workplace_and_target(workplace: str, target: str) -> tuple[str, str]:
     """Assign a mobile-work target to its specific workplace when stated."""
-    normalized_target = sampling_target(target)
+    normalized_target = normalize_text(target)
     workplaces = [part.strip() for part in re.split(r"[、，,]", workplace or "") if part.strip()]
     matched_workplace = next(
         (part for part in sorted(workplaces, key=len, reverse=True) if normalized_target.startswith(part)),
         "",
     )
     if not matched_workplace:
+        target_core = re.sub(r"(?:工作)?工位.*$", "", normalized_target)
+        matched_workplace = next(
+            (
+                part
+                for part in sorted(workplaces, key=len, reverse=True)
+                if target_core
+                and re.sub(r"(?:区域|区|车间|场所)$", "", part) == target_core
+            ),
+            "",
+        )
+    if not matched_workplace:
         return workplace, normalized_target
-    return matched_workplace, normalized_target[len(matched_workplace) :].strip()
+    if normalized_target.startswith(matched_workplace):
+        normalized_target = normalized_target[len(matched_workplace) :].strip()
+    return matched_workplace, normalized_target
 
 
 def build_table3(
@@ -746,6 +832,7 @@ def build_table3(
                     make_table3_row(
                         job_group_id=job_context["job_group_id"],
                         job_workplace=job_workplace,
+                        job_work_content=job_context.get("job_work_content", ""),
                         job_representative_time=job_time,
                         source_job_type=job_context["source_job_type"],
                         job_type_inference_reason=job_context["job_type_inference_reason"],
@@ -755,7 +842,7 @@ def build_table3(
                         workstation_count=workstation_count,
                         workstation_count_source=workstation_count_source,
                         job_type=job_context["job_type"],
-                        target=target,
+                        target=sampling_target(target),
                         project=project,
                         exposure_type=exposure_type,
                         sampling_time=detail_row.get("duration", ""),
@@ -785,6 +872,7 @@ def build_table3(
                     make_table3_row(
                         job_group_id=job_contexts[index]["job_group_id"],
                         job_workplace=overall_row.get("workplace", ""),
+                        job_work_content=job_contexts[index].get("job_work_content", ""),
                         job_representative_time=overall_representative_time(overall_row),
                         source_job_type=job_contexts[index]["source_job_type"],
                         job_type_inference_reason=job_contexts[index]["job_type_inference_reason"],

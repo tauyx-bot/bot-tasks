@@ -13,9 +13,27 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 
+DEFAULT_OEL_PATH = Path(__file__).resolve().parent.parent / "knowledge" / "oel_limits.json"
+DEFAULT_PHYSICAL_FACTORS_PATH = (
+    Path(__file__).resolve().parent.parent / "knowledge" / "physical_factors.json"
+)
+_DEFAULT_OEL_INDEX: Dict[str, Dict[str, object]] | None = None
+_DEFAULT_PHYSICAL_FACTOR_INDEX: set[str] | None = None
+
+
 def normalize_lookup(value: str) -> str:
-    value = re.sub(r"[（(][^（）()]*[）)]", "", value or "")
-    return "".join(value.split())
+    """Normalize names while ignoring Chinese/English parenthetical qualifiers."""
+    outside: List[str] = []
+    depth = 0
+    for character in value or "":
+        if character in "（(":
+            depth += 1
+        elif character in "）)":
+            if depth:
+                depth -= 1
+        elif depth == 0:
+            outside.append(character)
+    return "".join("".join(outside).split())
 
 
 def load_rule_index(index_path: Path) -> Dict[str, Dict[str, str]]:
@@ -30,16 +48,32 @@ def load_rule_index(index_path: Path) -> Dict[str, Dict[str, str]]:
         if isinstance(payload, list) and len(payload) >= 2:
             basis = "" if payload[0] is None else str(payload[0]).strip()
             storage = "" if payload[1] is None else str(payload[1]).strip()
-            collector = "" if len(payload) < 3 or payload[2] is None else str(payload[2]).strip()
-            display_name = name
+            collector_config = "" if len(payload) < 3 or payload[2] is None else str(payload[2]).strip()
+            collector_parts = re.split(r"[|｜]", collector_config, maxsplit=1)
+            collector = collector_parts[0].strip()
+            analysis_group = collector_parts[1].strip() if len(collector_parts) > 1 else ""
+            flow_rates = "" if len(payload) < 4 or payload[3] is None else str(payload[3]).strip()
+            # Array rules do not define a display-name override. Preserve the
+            # name found in the survey (including qualifiers such as
+            # “全部异构体”) when a normalized rule is matched.
+            display_name = ""
             category = "physical" if collector == "直读" else "dust" if "丙纶滤膜" in collector else "chemical"
             sampling_policy = "point_only" if category == "physical" else "default"
             default_individual_sampling_time = ""
             full_measure_below_hours = ""
+            # Extended physical-factor arrays retain the policy fields that
+            # were previously represented by an object. The fifth element in
+            # ordinary five-element arrays is only the method description.
+            if len(payload) >= 7:
+                sampling_policy = str(payload[4] or sampling_policy).strip()
+                default_individual_sampling_time = str(payload[5] or "").strip()
+                full_measure_below_hours = str(payload[6] or "").strip()
         elif isinstance(payload, dict):
             basis = str(payload.get("basis", "") or "").strip()
             storage = str(payload.get("storage", "") or "").strip()
             collector = str(payload.get("collector", "") or "").strip()
+            analysis_group = str(payload.get("analysis_group", "") or "").strip()
+            flow_rates = str(payload.get("flow_rates", "") or "").strip()
             display_name = str(payload.get("display_name", name) or name).strip()
             category = str(
                 payload.get(
@@ -60,6 +94,8 @@ def load_rule_index(index_path: Path) -> Dict[str, Dict[str, str]]:
             "basis": basis,
             "storage": storage,
             "collector": collector,
+            "analysis_group": analysis_group,
+            "flow_rates": flow_rates,
             "display_name": display_name,
             "category": category,
             "sampling_policy": sampling_policy,
@@ -67,6 +103,49 @@ def load_rule_index(index_path: Path) -> Dict[str, Dict[str, str]]:
             "full_measure_below_hours": full_measure_below_hours,
         }
     return index
+
+
+def configured_flow_rates(value: str) -> Dict[str, str]:
+    """Parse ``短时间:0.1L/min; 长时间:0.05L/min`` rule data."""
+    rates: Dict[str, str] = {}
+    for item in re.split(r"[;；]", value or ""):
+        parts = re.split(r"[:：]", item, maxsplit=1)
+        if len(parts) != 2:
+            continue
+        time_type, rate = (part.strip() for part in parts)
+        if not time_type or not rate:
+            continue
+        # The report column already carries the L/min unit, so retain the
+        # numeric value/range in the same form used by collector.json.
+        rates[time_type] = re.sub(
+            r"\s*L\s*/\s*min", "", rate, flags=re.IGNORECASE
+        ).strip()
+    return rates
+
+
+def flow_rate_for_project(
+    project: str,
+    sampling_mode: str,
+    time_type: str,
+    rule_index: Dict[str, Dict[str, str]],
+    fallback: str = "",
+) -> str:
+    """Choose flow from the project's rule and its sampling-time type."""
+    rule = rule_index.get(normalize_lookup(project), {})
+    return flow_rate_for_rule(rule, sampling_mode, time_type, fallback)
+
+
+def flow_rate_for_rule(
+    rule: Dict[str, str],
+    sampling_mode: str,
+    time_type: str,
+    fallback: str = "",
+) -> str:
+    """Choose flow from an already resolved project rule."""
+    rates = configured_flow_rates(rule.get("flow_rates", ""))
+    if sampling_mode == "个体" and rates.get("个体"):
+        return rates["个体"]
+    return rates.get(time_type, fallback)
 
 
 def display_project_name(project: str, rule_index: Dict[str, Dict[str, str]]) -> str:
@@ -95,6 +174,100 @@ def load_report_rules(path: Path) -> Dict[str, object]:
     if not isinstance(data, dict):
         raise RuntimeError("report rules file must be a JSON object")
     return data
+
+
+def load_oel_index(path: Path) -> Dict[str, Dict[str, object]]:
+    """Load the direct project-to-OEL-type mapping derived from GBZ 2.1."""
+    if not path.exists():
+        raise RuntimeError(f"OEL data file not found: {path}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise RuntimeError("OEL data file must be a JSON object")
+
+    index: Dict[str, Dict[str, object]] = {}
+    for project, configured_types in data.items():
+        if not isinstance(configured_types, list):
+            raise RuntimeError(f"OEL types for {project} must be an array")
+        limit_types = {str(limit_type) for limit_type in configured_types}
+        invalid_types = limit_types - {"MAC", "PC-TWA", "PC-STEL"}
+        if invalid_types:
+            raise RuntimeError(f"unsupported OEL types for {project}: {sorted(invalid_types)}")
+        if "MAC" in limit_types and "PC-STEL" in limit_types:
+            raise RuntimeError(f"{project} cannot define both MAC and PC-STEL")
+        if not limit_types:
+            continue
+        keyed_entry: Dict[str, object] = {
+            "project": str(project),
+            "limit_types": limit_types,
+        }
+        key = normalize_lookup(str(project))
+        if key in index:
+            if index[key]["limit_types"] != limit_types:
+                raise RuntimeError(f"conflicting OEL types after normalization: {project}")
+            continue
+        index[key] = keyed_entry
+    return index
+
+
+def default_oel_index() -> Dict[str, Dict[str, object]]:
+    global _DEFAULT_OEL_INDEX
+    if _DEFAULT_OEL_INDEX is None:
+        _DEFAULT_OEL_INDEX = load_oel_index(DEFAULT_OEL_PATH)
+    return _DEFAULT_OEL_INDEX
+
+
+def load_physical_factor_index(path: Path) -> set[str]:
+    """Load normalized GBZ 2.2 physical-factor names and aliases."""
+    if not path.exists():
+        raise RuntimeError(f"physical-factor data file not found: {path}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list) or not all(isinstance(item, str) for item in data):
+        raise RuntimeError("physical-factor data file must be an array of names")
+    normalized = {
+        normalize_physical_lookup(item)
+        for item in data
+        if normalize_physical_lookup(item)
+    }
+    if len(normalized) != len(data):
+        raise RuntimeError("physical-factor data contains empty or duplicate normalized names")
+    return normalized
+
+
+def normalize_physical_lookup(value: str) -> str:
+    return normalize_lookup(value).replace("～", "~").casefold()
+
+
+def default_physical_factor_index() -> set[str]:
+    global _DEFAULT_PHYSICAL_FACTOR_INDEX
+    if _DEFAULT_PHYSICAL_FACTOR_INDEX is None:
+        _DEFAULT_PHYSICAL_FACTOR_INDEX = load_physical_factor_index(
+            DEFAULT_PHYSICAL_FACTORS_PATH
+        )
+    return _DEFAULT_PHYSICAL_FACTOR_INDEX
+
+
+def is_physical_factor(
+    project: str,
+    project_rule: Dict[str, str] | None = None,
+    physical_factor_index: set[str] | None = None,
+) -> bool:
+    if (project_rule or {}).get("category") == "physical":
+        return True
+    index = (
+        default_physical_factor_index()
+        if physical_factor_index is None
+        else physical_factor_index
+    )
+    return normalize_physical_lookup(project) in index
+
+
+def oel_limit_types(
+    project: str,
+    oel_index: Dict[str, Dict[str, object]] | None = None,
+) -> set[str]:
+    index = default_oel_index() if oel_index is None else oel_index
+    entry = index.get(normalize_lookup(project), {})
+    return set(entry.get("limit_types", set()))
 
 
 def run_parse_script(script: Path, pdf: Path, output: Path, config: Path) -> None:
@@ -419,20 +592,22 @@ def limit_type_for(
     collector_supports_individual: bool,
     report_rules: Dict[str, object],
     project_rule: Dict[str, str],
+    oel_index: Dict[str, Dict[str, object]] | None = None,
 ) -> str:
-    """Resolve the exposure-limit type independently of sampling duration."""
+    """Resolve the plan limit type from sampling mode and the GBZ 2.1 OELs."""
     sampling_rules = report_rules["sampling"]
-    if project_rule.get("category") == "physical":
+    if is_physical_factor(project, project_rule):
         return sampling_rules["physical_limit_type"]
+    limit_types = oel_limit_types(project, oel_index)
     if sampling_mode == sampling_rules["individual_mode"]:
-        return sampling_rules["individual_limit_type"]
-    if not collector_supports_individual:
-        # These media cannot be used for individual long-duration sampling;
-        # multiple fixed-point samples are combined for the PC-TWA result.
-        return sampling_rules["individual_limit_type"]
-    if project_rule.get("category") == "dust":
+        return sampling_rules["individual_limit_type"] if "PC-TWA" in limit_types else ""
+    if "PC-STEL" in limit_types:
+        return sampling_rules["point_limit_type"]
+    if "MAC" in limit_types:
+        return "MAC"
+    if "PC-TWA" in limit_types:
         return "PE"
-    return sampling_rules["point_limit_type"]
+    return ""
 
 
 def sampling_parameters(
@@ -448,10 +623,11 @@ def sampling_parameters(
     report_rules: Dict[str, object],
     project_rule: Dict[str, str] | None = None,
     workstation_count: str = "",
+    oel_index: Dict[str, Dict[str, object]] | None = None,
 ) -> Dict[str, str]:
     sampling_rules = report_rules["sampling"]
     project_rule = project_rule or {}
-    is_physical = project_rule.get("category") == "physical"
+    is_physical = is_physical_factor(project, project_rule)
     daily_times = sampling_rules["daily_times"]
     times_per_day = str(daily_times["default"])
     # A long-duration individual measurement is one continuous measurement;
@@ -473,9 +649,15 @@ def sampling_parameters(
         collector_supports_individual,
         report_rules,
         project_rule,
+        oel_index,
     )
     if is_physical:
         is_individual = sampling_mode == sampling_rules["individual_mode"]
+        time_type = (
+            sampling_rules["long_time_type"]
+            if is_individual
+            else sampling_rules["short_time_type"]
+        )
         sampling_time = "/"
         if (
             project_rule.get("sampling_policy") == "mobile_individual"
@@ -491,12 +673,10 @@ def sampling_parameters(
         return {
             "limit_type": limit_type,
             "sampling_mode": sampling_mode,
-            "time_type": (
-                sampling_rules["long_time_type"]
-                if is_individual
-                else sampling_rules["short_time_type"]
+            "time_type": time_type,
+            "flow_rate": flow_rate_for_rule(
+                project_rule, sampling_mode, time_type, collector_flow_rate
             ),
-            "flow_rate": collector_flow_rate,
             "points_per_day": point_count,
             "times_per_day": times_per_day,
             "days": days,
@@ -504,11 +684,14 @@ def sampling_parameters(
         }
 
     is_short_term = not collector_supports_individual or sampling_mode == sampling_rules["point_mode"]
+    time_type = sampling_rules["short_time_type"] if is_short_term else sampling_rules["long_time_type"]
     return {
         "limit_type": limit_type,
         "sampling_mode": sampling_mode,
-        "time_type": sampling_rules["short_time_type"] if is_short_term else sampling_rules["long_time_type"],
-        "flow_rate": collector_flow_rate,
+        "time_type": time_type,
+        "flow_rate": flow_rate_for_rule(
+            project_rule, sampling_mode, time_type, collector_flow_rate
+        ),
         "points_per_day": point_count,
         "times_per_day": times_per_day,
         "days": days,
@@ -533,6 +716,7 @@ def merge_projects_by_collector(
     table3_keys: Tuple[str, ...],
     detection_type: str,
     report_rules: Dict[str, object],
+    oel_index: Dict[str, Dict[str, object]] | None = None,
 ) -> List[Dict[str, str]]:
     merged: List[Dict[str, str]] = []
     grouped: Dict[Tuple[str, ...], Dict[str, str]] = {}
@@ -586,7 +770,10 @@ def merge_projects_by_collector(
         source = {key: row.get(key, "") for key in table3_keys}
         sampling_context = source.get("target", "")
         project = source.get("project", "")
-        project_rule = rule_index.get(normalize_lookup(project), {})
+        project_rule = dict(rule_index.get(normalize_lookup(project), {}))
+        if is_physical_factor(project, project_rule):
+            project_rule["category"] = "physical"
+            project_rule.setdefault("sampling_policy", "point_only")
         initial_collector = collector_for_project(
             project,
             sampling_rules["point_mode"],
@@ -604,6 +791,13 @@ def merge_projects_by_collector(
             project_rule,
             report_rules,
         )
+        project_limit_types = oel_limit_types(project, oel_index)
+        if (
+            project_rule.get("category") != "physical"
+            and point_or_individual == sampling_rules["individual_mode"]
+            and "PC-TWA" not in project_limit_types
+        ):
+            point_or_individual = sampling_rules["point_mode"]
         modes = [point_or_individual]
 
         if source.get("job_type", "") == sampling_rules["mobile_job_type"]:
@@ -646,22 +840,30 @@ def merge_projects_by_collector(
             report_rules,
             project_rule,
             workstation_count=source.get("workstation_count", ""),
+            oel_index=oel_index,
         )
         # Every fixed workplace record with a PC limit is supplemented with a
-        # worker-worn PC-TWA sample. Physical factors use "/" and do not qualify.
+        # worker-worn PC-TWA sample. Physical factors have a blank limit type
+        # and do not qualify.
         if (
             point_or_individual == sampling_rules["point_mode"]
             and source.get("job_type", "") != sampling_rules["mobile_job_type"]
             and bool(base_collector.get("supports_individual", False))
-            and base_parameters["limit_type"] != sampling_rules["physical_limit_type"]
+            and "PC-TWA" in project_limit_types
         ):
             modes.append(sampling_rules["individual_mode"])
 
         for sampling_mode in modes:
             filled = source.copy()
+            filled["_is_physical"] = project_rule.get("category") == "physical"
+            filled["_analysis_group"] = project_rule.get("analysis_group", "")
             parameter_time = source.get("representative_time", "")
             if sampling_mode == sampling_rules["individual_mode"]:
-                filled["workplace"] = source.get("job_workplace", "") or source.get("workplace", "")
+                filled["workplace"] = (
+                    source.get("job_work_content", "")
+                    or source.get("job_workplace", "")
+                    or source.get("workplace", "")
+                )
                 parameter_time = (
                     source.get("job_representative_time", "")
                     or source.get("representative_time", "")
@@ -685,6 +887,7 @@ def merge_projects_by_collector(
                         report_rules,
                         project_rule,
                         workstation_count=source.get("workstation_count", ""),
+                        oel_index=oel_index,
                     ),
                     collector_info,
                     source.get("job_type", ""),
@@ -699,7 +902,11 @@ def merge_projects_by_collector(
             )
 
             grouping_context = sampling_context if sampling_mode == sampling_rules["point_mode"] else ""
-            group_key = (grouping_context, sampling_mode) + tuple(
+            group_key = (
+                grouping_context,
+                sampling_mode,
+                filled["_analysis_group"],
+            ) + tuple(
                 filled[key]
                 for key in table3_keys
                 # Representative time documents the source activity. It must
@@ -750,12 +957,15 @@ def build_table3(
     rule_index: Dict[str, Dict[str, str]],
     detection_type: str,
     report_rules: Dict[str, object],
+    oel_index: Dict[str, Dict[str, object]] | None = None,
 ) -> Tuple[List[Dict[str, str]], List[str]]:
     output: List[Dict[str, str]] = []
     missing: List[str] = []
     table3_keys = (
         "job_group_id",
+        "_is_physical",
         "job_workplace",
+        "job_work_content",
         "job_representative_time",
         "source_job_type",
         "job_type_inference_reason",
@@ -783,7 +993,15 @@ def build_table3(
     )
 
     merged_rows = sort_table3_rows(
-        merge_projects_by_collector(rows, collector_index, rule_index, table3_keys, detection_type, report_rules)
+        merge_projects_by_collector(
+            rows,
+            collector_index,
+            rule_index,
+            table3_keys,
+            detection_type,
+            report_rules,
+            oel_index,
+        )
     )
     sampling_numbers: Dict[Tuple[str, str, str], str] = {}
     for filled in merged_rows:
@@ -799,6 +1017,10 @@ def build_table3(
         for key in ("workplace", "position", "target", "project"):
             if not filled.get(key):
                 missing.append(f"Table3 {project} {key}")
+        if not filled.get("limit_type") and not filled.get("_is_physical"):
+            missing.append(f"Table3 {project} GBZ 2.1 OEL")
+        if not filled.get("limit_type"):
+            filled["limit_type"] = "/"
         people_match = re.search(r"\d+", filled.get("people_per_shift", ""))
         if (
             people_match
@@ -812,6 +1034,8 @@ def build_table3(
                     position=filled.get("position", ""),
                 )
             )
+        filled.pop("_is_physical", None)
+        filled.pop("_analysis_group", None)
         output.append(filled)
     return output, missing
 
@@ -840,7 +1064,13 @@ def run_fill_script(script: Path, template: Path, payload: Path, output: Path, c
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pdf", required=True, type=Path)
+    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument("--pdf", type=Path)
+    source_group.add_argument(
+        "--parsed-json",
+        type=Path,
+        help="调查表解析并经大模型规范后的 JSON；使用时不再重复解析 PDF",
+    )
     parser.add_argument("--component-report", type=Path)
     parser.add_argument("--template", required=True, type=Path)
     parser.add_argument("--rules", required=True, type=Path)
@@ -855,6 +1085,7 @@ def main() -> int:
     component_parse_script = scripts_dir / "parse_component_report.py"
     fill_script = scripts_dir / "fill_docx.py"
     collector_path = root_dir / "knowledge" / "collector.json"
+    oel_path = root_dir / "knowledge" / "oel_limits.json"
     config_path = args.config or root_dir / "knowledge" / "report_rules.json"
 
     try:
@@ -862,10 +1093,16 @@ def main() -> int:
             raw_payload_path = Path(tmpdir) / "parsed.json"
             component_payload_path = Path(tmpdir) / "components.json"
             final_payload_path = Path(tmpdir) / "payload.json"
-            run_parse_script(parse_script, args.pdf, raw_payload_path, config_path)
-            parsed = json.loads(raw_payload_path.read_text(encoding="utf-8"))
+            if args.parsed_json:
+                parsed = json.loads(args.parsed_json.read_text(encoding="utf-8"))
+                if not isinstance(parsed, dict):
+                    raise ValueError("--parsed-json 的顶层必须是 JSON 对象")
+            else:
+                run_parse_script(parse_script, args.pdf, raw_payload_path, config_path)
+                parsed = json.loads(raw_payload_path.read_text(encoding="utf-8"))
             rule_index = load_rule_index(args.rules)
             collector_index = load_collector_index(collector_path)
+            oel_index = load_oel_index(oel_path)
             report_rules = load_report_rules(config_path)
             component_payload: Dict[str, object] = {"samples": []}
             component_missing: List[str] = []
@@ -893,6 +1130,7 @@ def main() -> int:
                 rule_index,
                 parsed.get("header", {}).get("detection_type", ""),
                 report_rules,
+                oel_index,
             )
             missing_fields = dedupe(
                 parsed.get("missing_fields", []) + component_missing + missing2 + missing3

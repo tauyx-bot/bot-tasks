@@ -191,6 +191,7 @@
     {
       "job_group_id": "overall:1",
       "job_workplace": "生产车间",
+      "job_work_content": "磨床工位操作磨床、车床工位操作车床、钻床工位操作钻床、铣床工位操作铣床",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "详细接触记录包含4个工位，工位时长合计8h，与每日接触时间8h一致",
@@ -209,6 +210,7 @@
     {
       "job_group_id": "overall:1",
       "job_workplace": "生产车间",
+      "job_work_content": "磨床工位操作磨床、车床工位操作车床、钻床工位操作钻床、铣床工位操作铣床",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "详细接触记录包含4个工位，工位时长合计8h，与每日接触时间8h一致",
@@ -227,6 +229,7 @@
     {
       "job_group_id": "overall:1",
       "job_workplace": "生产车间",
+      "job_work_content": "磨床工位操作磨床、车床工位操作车床、钻床工位操作钻床、铣床工位操作铣床",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "详细接触记录包含4个工位，工位时长合计8h，与每日接触时间8h一致",
@@ -245,6 +248,7 @@
     {
       "job_group_id": "overall:1",
       "job_workplace": "生产车间",
+      "job_work_content": "磨床工位操作磨床、车床工位操作车床、钻床工位操作钻床、铣床工位操作铣床",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "详细接触记录包含4个工位，工位时长合计8h，与每日接触时间8h一致",
@@ -263,6 +267,7 @@
     {
       "job_group_id": "overall:1",
       "job_workplace": "生产车间",
+      "job_work_content": "磨床工位操作磨床、车床工位操作车床、钻床工位操作钻床、铣床工位操作铣床",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "详细接触记录包含4个工位，工位时长合计8h，与每日接触时间8h一致",
@@ -281,6 +286,7 @@
     {
       "job_group_id": "overall:1",
       "job_workplace": "生产车间",
+      "job_work_content": "磨床工位操作磨床、车床工位操作车床、钻床工位操作钻床、铣床工位操作铣床",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "详细接触记录包含4个工位，工位时长合计8h，与每日接触时间8h一致",
@@ -299,6 +305,7 @@
     {
       "job_group_id": "overall:1",
       "job_workplace": "生产车间",
+      "job_work_content": "磨床工位操作磨床、车床工位操作车床、钻床工位操作钻床、铣床工位操作铣床",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "详细接触记录包含4个工位，工位时长合计8h，与每日接触时间8h一致",
@@ -317,6 +324,7 @@
     {
       "job_group_id": "overall:1",
       "job_workplace": "生产车间",
+      "job_work_content": "磨床工位操作磨床、车床工位操作车床、钻床工位操作钻床、铣床工位操作铣床",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "详细接触记录包含4个工位，工位时长合计8h，与每日接触时间8h一致",
@@ -335,6 +343,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "生产车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",

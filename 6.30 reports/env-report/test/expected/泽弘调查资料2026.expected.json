@@ -322,6 +322,7 @@
     {
       "job_group_id": "overall:2",
       "job_workplace": "生产车间",
+      "job_work_content": "电泳工位电泳、超声波清洗工位超声波清洗、电烤箱工位烘干",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -340,6 +341,7 @@
     {
       "job_group_id": "overall:2",
       "job_workplace": "生产车间",
+      "job_work_content": "电泳工位电泳、超声波清洗工位超声波清洗、电烤箱工位烘干",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -358,6 +360,7 @@
     {
       "job_group_id": "overall:2",
       "job_workplace": "生产车间",
+      "job_work_content": "电泳工位电泳、超声波清洗工位超声波清洗、电烤箱工位烘干",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -376,6 +379,7 @@
     {
       "job_group_id": "overall:2",
       "job_workplace": "生产车间",
+      "job_work_content": "电泳工位电泳、超声波清洗工位超声波清洗、电烤箱工位烘干",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -394,6 +398,7 @@
     {
       "job_group_id": "overall:2",
       "job_workplace": "生产车间",
+      "job_work_content": "电泳工位电泳、超声波清洗工位超声波清洗、电烤箱工位烘干",
       "job_representative_time": "8h",
       "source_job_type": "流动作业",
       "job_type_inference_reason": "",
@@ -412,6 +417,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "打磨车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -430,6 +436,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "打磨车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -448,6 +455,7 @@
     {
       "job_group_id": "overall:0",
       "job_workplace": "打磨车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -466,6 +474,7 @@
     {
       "job_group_id": "overall:1",
       "job_workplace": "生产车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -484,6 +493,7 @@
     {
       "job_group_id": "overall:3",
       "job_workplace": "生产车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
@@ -502,6 +512,7 @@
     {
       "job_group_id": "overall:4",
       "job_workplace": "生产车间",
+      "job_work_content": "",
       "job_representative_time": "8h",
       "source_job_type": "固定作业",
       "job_type_inference_reason": "",
