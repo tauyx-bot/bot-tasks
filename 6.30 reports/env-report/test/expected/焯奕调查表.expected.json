@@ -2,17 +2,92 @@
   "header": {
     "detection_task_no": "粤鑫职定期2025197号",
     "unit_name": "中山市焯奕服饰有限公司",
-    "contact": "谢总 13923351919",
+    "contact": "谢总13923351919",
     "address": "中山市小榄镇竹源社区侨源东路13号（物业一区142号之2）",
-    "detection_type": "定期检测"
+    "detection_type": "定期检测",
+    "expected_sampling_time": "8:00-12:00，13:30-17:30"
   },
   "survey_tables": {
     "basic_info": [],
-    "materials": [],
-    "products": [],
-    "equipment": [],
-    "protection_facilities": [],
-    "ppe": [],
+    "materials": [
+      {
+        "name": "蓝光胶水",
+        "annual_use": "10桶",
+        "physical_state": "液态",
+        "components": "见挥发性有机组份定性结果",
+        "workplace": "生产车间",
+        "position": "成型工"
+      },
+      {
+        "name": "布料",
+        "annual_use": "2000米",
+        "physical_state": "固态",
+        "components": "/",
+        "workplace": "生产车间",
+        "position": "各工种"
+      }
+    ],
+    "products": [
+      {
+        "name": "休闲鞋",
+        "annual_output": "1万双",
+        "physical_state": "固态",
+        "packaging": "箱式"
+      }
+    ],
+    "equipment": [
+      {
+        "name": "裁床",
+        "model": "/",
+        "total_count": "2",
+        "running_count": "1",
+        "workplace": "生产车间",
+        "position": "裁床工",
+        "layout": "1.机群式布局"
+      },
+      {
+        "name": "针车",
+        "model": "/",
+        "total_count": "16",
+        "running_count": "1",
+        "workplace": "生产车间",
+        "position": "针车工",
+        "layout": "1.机群式布局"
+      },
+      {
+        "name": "成型生产线",
+        "model": "/",
+        "total_count": "1",
+        "running_count": "1",
+        "workplace": "生产车间",
+        "position": "成型工",
+        "layout": "3.直线型生产线布局"
+      }
+    ],
+    "protection_facilities": [
+      {
+        "workplace": "生产车间",
+        "target": "各工位",
+        "name": "管道送风系统",
+        "type": "防暑降温",
+        "total_count": "1",
+        "running_count": "1",
+        "notes": ""
+      }
+    ],
+    "ppe": [
+      {
+        "classification": "/",
+        "category": "/",
+        "manufacturer": "/",
+        "model": "/",
+        "workplace": "/",
+        "position": "/",
+        "replacement_cycle": "/",
+        "wearing_status": "/",
+        "notes": ""
+      }
+    ],
     "overall_exposure": [
       [
         "生产车间",
@@ -109,9 +184,16 @@
   ],
   "table3": [
     {
+      "job_group_id": "overall:0",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "固定作业",
+      "job_type_inference_reason": "",
       "workplace": "生产车间",
       "position": "裁床工",
       "people_per_shift": "1",
+      "workstation_count": "1",
+      "workstation_count_source": "设备表运行数：裁床共1台",
       "job_type": "固定",
       "target": "裁床工位",
       "project": "噪声",
@@ -120,9 +202,16 @@
       "representative_time": "8h"
     },
     {
+      "job_group_id": "overall:1",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "固定作业",
+      "job_type_inference_reason": "",
       "workplace": "生产车间",
       "position": "针车工",
       "people_per_shift": "1",
+      "workstation_count": "1",
+      "workstation_count_source": "设备表运行数：针车共1台",
       "job_type": "固定",
       "target": "针车工位",
       "project": "噪声",
@@ -131,9 +220,16 @@
       "representative_time": "8h"
     },
     {
+      "job_group_id": "overall:2",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "固定作业",
+      "job_type_inference_reason": "",
       "workplace": "生产车间",
       "position": "成型工",
       "people_per_shift": "1",
+      "workstation_count": "1",
+      "workstation_count_source": "设备表运行数：成型生产线共1台",
       "job_type": "固定",
       "target": "成型工位",
       "project": "蓝光胶水（取样分析）",
@@ -142,9 +238,16 @@
       "representative_time": "8h"
     },
     {
+      "job_group_id": "overall:2",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "固定作业",
+      "job_type_inference_reason": "",
       "workplace": "生产车间",
       "position": "成型工",
       "people_per_shift": "1",
+      "workstation_count": "1",
+      "workstation_count_source": "设备表运行数：成型生产线共1台",
       "job_type": "固定",
       "target": "成型工位",
       "project": "噪声",

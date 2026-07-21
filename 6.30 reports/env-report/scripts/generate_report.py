@@ -27,17 +27,51 @@ def load_rule_index(index_path: Path) -> Dict[str, Dict[str, str]]:
 
     index: Dict[str, Dict[str, str]] = {}
     for name, payload in data.items():
-        if not isinstance(payload, list) or len(payload) < 2:
+        if isinstance(payload, list) and len(payload) >= 2:
+            basis = "" if payload[0] is None else str(payload[0]).strip()
+            storage = "" if payload[1] is None else str(payload[1]).strip()
+            collector = "" if len(payload) < 3 or payload[2] is None else str(payload[2]).strip()
+            display_name = name
+            category = "physical" if collector == "直读" else "dust" if "丙纶滤膜" in collector else "chemical"
+            sampling_policy = "point_only" if category == "physical" else "default"
+            default_individual_sampling_time = ""
+            full_measure_below_hours = ""
+        elif isinstance(payload, dict):
+            basis = str(payload.get("basis", "") or "").strip()
+            storage = str(payload.get("storage", "") or "").strip()
+            collector = str(payload.get("collector", "") or "").strip()
+            display_name = str(payload.get("display_name", name) or name).strip()
+            category = str(
+                payload.get(
+                    "category",
+                    "physical" if collector == "直读" else "dust" if "丙纶滤膜" in collector else "chemical",
+                )
+            ).strip()
+            sampling_policy = str(
+                payload.get("sampling_policy", "point_only" if category == "physical" else "default")
+            ).strip()
+            default_individual_sampling_time = str(
+                payload.get("default_individual_sampling_time", "") or ""
+            ).strip()
+            full_measure_below_hours = str(payload.get("full_measure_below_hours", "") or "").strip()
+        else:
             continue
-        basis = "" if payload[0] is None else str(payload[0]).strip()
-        storage = "" if payload[1] is None else str(payload[1]).strip()
-        collector = "" if len(payload) < 3 or payload[2] is None else str(payload[2]).strip()
         index[normalize_lookup(name)] = {
             "basis": basis,
             "storage": storage,
             "collector": collector,
+            "display_name": display_name,
+            "category": category,
+            "sampling_policy": sampling_policy,
+            "default_individual_sampling_time": default_individual_sampling_time,
+            "full_measure_below_hours": full_measure_below_hours,
         }
     return index
+
+
+def display_project_name(project: str, rule_index: Dict[str, Dict[str, str]]) -> str:
+    rule = rule_index.get(normalize_lookup(project), {})
+    return rule.get("display_name", "") or project
 
 
 def load_collector_index(index_path: Path) -> Dict[str, object]:
@@ -74,6 +108,17 @@ def run_parse_script(script: Path, pdf: Path, output: Path, config: Path) -> Non
         raise RuntimeError(result.stderr.strip() or "parse_pdf.py failed")
 
 
+def run_component_parse_script(script: Path, pdf: Path, output: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, str(script), "--pdf", str(pdf), "--output", str(output)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "parse_component_report.py failed")
+
+
 def dedupe(items: List[str]) -> List[str]:
     seen: List[str] = []
     for item in items:
@@ -82,15 +127,69 @@ def dedupe(items: List[str]) -> List[str]:
     return seen
 
 
+def replace_component_placeholders(
+    parsed: Dict[str, object],
+    component_payload: Dict[str, object],
+    report_rules: Dict[str, object],
+) -> List[str]:
+    """Replace sampled-material placeholders with reportable analyzed components."""
+    composition_rules = report_rules.get("composition", {})
+    markers = [str(value) for value in composition_rules.get("placeholder_markers", [])]
+    ignored = {
+        normalize_lookup(str(value))
+        for value in composition_rules.get("ignored_components", [])
+    }
+    components_by_sample: Dict[str, List[str]] = {}
+    for sample in component_payload.get("samples", []):
+        if not isinstance(sample, dict):
+            continue
+        names = dedupe(
+            [
+                str(component.get("name", "")).strip()
+                for component in sample.get("components", [])
+                if isinstance(component, dict)
+                and normalize_lookup(str(component.get("name", ""))) not in ignored
+            ]
+        )
+        components_by_sample[normalize_lookup(str(sample.get("sample_name", "")))] = names
+
+    unresolved: List[str] = []
+
+    def replacements(project: str) -> List[str]:
+        if not any(marker and marker in project for marker in markers):
+            return [project]
+        sample_name = project
+        for marker in markers:
+            sample_name = sample_name.replace(marker, "")
+        components = components_by_sample.get(normalize_lookup(sample_name), [])
+        if components:
+            return components
+        unresolved.append(project)
+        return [project]
+
+    projects: List[str] = []
+    for project in parsed.get("projects", []):
+        projects.extend(replacements(str(project)))
+    parsed["projects"] = dedupe(projects)
+
+    table3: List[Dict[str, str]] = []
+    for row in parsed.get("table3", []):
+        if not isinstance(row, dict):
+            continue
+        for project in replacements(str(row.get("project", ""))):
+            replacement = row.copy()
+            replacement["project"] = project
+            table3.append(replacement)
+    parsed["table3"] = table3
+    return dedupe([f"ComponentReport {project}" for project in unresolved])
+
+
 def build_table2(
     projects: List[str],
     table3_rows: List[Dict[str, str]],
     rule_index: Dict[str, Dict[str, str]],
     report_rules: Dict[str, object],
 ) -> Tuple[List[Dict[str, str]], List[str]]:
-    categories = report_rules["project_categories"]
-    physical_projects = set(categories["physical"])
-    powder_projects = set(categories["powder"])
     source_projects = dedupe(projects)
     if not source_projects:
         source_projects = dedupe([row.get("project", "") for row in table3_rows])
@@ -101,19 +200,15 @@ def build_table2(
         matched_rule = rule_index.get(normalize_lookup(project))
         if matched_rule:
             storage = matched_rule["storage"]
-            if not storage and project in physical_projects:
-                storage = "/"
-            elif not storage and project in powder_projects:
-                storage = "长期"
             rows.append(
                 {
-                    "检测项目": project,
+                    "检测项目": display_project_name(project, rule_index),
                     "检测依据": matched_rule["basis"],
                     "样品保存条件和期限": storage,
                 }
             )
             continue
-        storage = "/" if project in physical_projects else "长期" if project in powder_projects else ""
+        storage = ""
         rows.append(
             {
                 "检测项目": project,
@@ -166,20 +261,25 @@ def collector_for_project(
     collector_index: Dict[str, object],
     rule_index: Dict[str, Dict[str, str]],
     report_rules: Dict[str, object],
-) -> Dict[str, str]:
+) -> Dict[str, object]:
     """Choose a collector by project, then choose its device by sampling mode."""
     sampling_rules = report_rules["sampling"]
-    aliases = report_rules["project_aliases"]
-    candidates = [normalize_lookup(project), normalize_lookup(aliases.get(project, ""))]
-
-    for candidate in candidates:
-        rule = rule_index.get(candidate)
-        if rule and rule.get("collector"):
-            collector = rule["collector"]
-            break
-    else:
+    rule = rule_index.get(normalize_lookup(project))
+    if not rule or not rule.get("collector"):
         # Unknown projects are retained in the form for later manual completion.
-        return {"collector": "", "device": "", "flow_rate": ""}
+        return {"collector": "", "device": "", "flow_rate": "", "supports_individual": False}
+    collector = rule["collector"]
+    collector_capabilities = collector_index.get(collector, {})
+    supports_individual = (
+        bool(collector_capabilities.get("supports_individual", True))
+        if isinstance(collector_capabilities, dict)
+        else True
+    )
+    point_sampling_time = (
+        str(collector_capabilities.get("point_sampling_time", "") or "").strip()
+        if isinstance(collector_capabilities, dict)
+        else ""
+    )
 
     # Direct-reading factors are recorded as the shared collector "直读", but
     # their instruments are factor-specific (for example, noise). Prefer a
@@ -187,14 +287,39 @@ def collector_for_project(
     # configured collector text in the generated form.
     equipment = collector_index.get(normalize_lookup(project)) or collector_index.get(collector)
     if not isinstance(equipment, dict):
-        return {"collector": collector, "device": "", "flow_rate": ""}
+        return {
+            "collector": collector,
+            "device": "",
+            "flow_rate": "",
+            "supports_individual": supports_individual,
+            "point_sampling_time": point_sampling_time,
+        }
     device_key = "个体采样设备" if sampling_mode == sampling_rules["individual_mode"] else "定点采样设备"
     flow_rate_key = "个体采样流量" if sampling_mode == sampling_rules["individual_mode"] else "定点采样流量"
     return {
         "collector": collector,
         "device": str(equipment.get(device_key, "") or "").strip(),
         "flow_rate": str(equipment.get(flow_rate_key, "") or "").strip(),
+        "supports_individual": supports_individual,
+        "point_sampling_time": point_sampling_time,
     }
+
+
+def apply_collector_sampling_capabilities(
+    parameters: Dict[str, str],
+    collector_info: Dict[str, object],
+    job_type: str,
+    exposure_type: str,
+    report_rules: Dict[str, object],
+) -> Dict[str, str]:
+    """Apply sampling-medium capabilities without project or company exceptions."""
+    sampling_rules = report_rules["sampling"]
+    if parameters.get("sampling_mode") != sampling_rules["point_mode"]:
+        return parameters
+    point_time = str(collector_info.get("point_sampling_time", "") or "")
+    if point_time:
+        parameters["sampling_time"] = point_time
+    return parameters
 
 
 def sampling_mode_for(
@@ -202,38 +327,52 @@ def sampling_mode_for(
     job_type: str,
     target: str,
     collector: str,
+    collector_supports_individual: bool,
+    exposure_type: str,
+    project_rule: Dict[str, str],
     report_rules: Dict[str, object],
 ) -> str:
     """Choose individual sampling for mobile jobs when the collector permits it."""
     sampling_rules = report_rules["sampling"]
-    if project in set(report_rules["project_categories"]["physical"]):
-        # The physical-factor rules require separate fixed-location readings for
-        # high temperature and hand-arm vibration. Mobile noise is the exception
-        # and requires an individual measurement.
-        if project == "噪声" and job_type == sampling_rules["mobile_job_type"]:
+    if project_rule.get("category") == "physical":
+        if (
+            project_rule.get("sampling_policy") == "mobile_individual"
+            and job_type == sampling_rules["mobile_job_type"]
+        ):
             return sampling_rules["individual_mode"]
         return sampling_rules["point_mode"]
-    if "粉尘" in project:
-        # Mobile workers still need the individual work locations represented
-        # as sampling points; dust has no separate worker-worn requirement here.
+    if not collector_supports_individual:
         return sampling_rules["point_mode"]
-    if collector in {
-        sampling_rules["sample_bag_collector"],
-        sampling_rules["absorption_solution_collector"],
-    }:
-        return sampling_rules["point_mode"]
+    # A stable fixed job is represented by a long-duration worker sample.
+    # Unstable jobs retain their location samples and receive an individual
+    # sample through the supplemental logic below.
+    if exposure_type == "①":
+        return sampling_rules["individual_mode"]
     if target == sampling_rules["individual_target"] or job_type == sampling_rules["mobile_job_type"]:
         return sampling_rules["individual_mode"]
     return sampling_rules["point_mode"]
 
 
-def points_per_day(people_per_shift: str, sampling_rules: Dict[str, object]) -> str:
-    """Select the GBZ 159 sampling-point/object count from the shift headcount."""
+def points_per_day(
+    people_per_shift: str,
+    sampling_mode: str,
+    sampling_rules: Dict[str, object],
+    workstation_count: str = "",
+) -> str:
+    """Select sampling objects separately from fixed-location point counts."""
     match = re.search(r"\d+", people_per_shift or "")
     people = int(match.group()) if match else 1
+    if sampling_mode == sampling_rules["individual_mode"]:
+        for threshold in sampling_rules["daily_objects_by_people_per_shift"]:
+            maximum_people = threshold["maximum_people"]
+            if maximum_people is None or people <= maximum_people:
+                return str(threshold["objects"])
+        raise RuntimeError("daily_objects_by_people_per_shift must include an open-ended threshold")
+    workstation_match = re.search(r"\d+", workstation_count or "")
+    count = int(workstation_match.group()) if workstation_match else people
     for threshold in sampling_rules["daily_points_by_people_per_shift"]:
         maximum_people = threshold["maximum_people"]
-        if maximum_people is None or people <= maximum_people:
+        if maximum_people is None or count <= maximum_people:
             return str(threshold["points"])
     raise RuntimeError("daily_points_by_people_per_shift must include an open-ended threshold")
 
@@ -253,20 +392,22 @@ def individual_sampling_time(
     job_type: str,
     representative_time: str,
     sampling_rules: Dict[str, object],
+    project_rule: Dict[str, str],
 ) -> str:
     """Calculate a compliant long-duration sample from the survey duration."""
     hours = duration_hours(representative_time)
     if hours is None:
         return (
-            sampling_rules["individual_noise_sampling_time"]
-            if project == "噪声"
-            else sampling_rules["individual_sampling_time"]
+            project_rule.get("default_individual_sampling_time", "")
+            or sampling_rules["individual_sampling_time"]
         )
 
     is_mobile = job_type == sampling_rules["mobile_job_type"]
     minimum_fraction = 0.5 if is_mobile else 0.25
-    if project == "噪声" and hours < 1:
-        # For less than one hour of noise exposure, measure the whole exposure.
+    full_measure_below = duration_hours(
+        f"{project_rule.get('full_measure_below_hours', '')}h"
+    )
+    if full_measure_below is not None and hours < full_measure_below:
         return format_duration(hours)
     return format_duration(max(hours * minimum_fraction, 1))
 
@@ -275,23 +416,21 @@ def limit_type_for(
     project: str,
     sampling_mode: str,
     collector: str,
+    collector_supports_individual: bool,
     report_rules: Dict[str, object],
+    project_rule: Dict[str, str],
 ) -> str:
     """Resolve the exposure-limit type independently of sampling duration."""
     sampling_rules = report_rules["sampling"]
-    categories = report_rules["project_categories"]
-    if project in set(categories["physical"]):
+    if project_rule.get("category") == "physical":
         return sampling_rules["physical_limit_type"]
     if sampling_mode == sampling_rules["individual_mode"]:
         return sampling_rules["individual_limit_type"]
-    if collector in {
-        sampling_rules["sample_bag_collector"],
-        sampling_rules["absorption_solution_collector"],
-    }:
+    if not collector_supports_individual:
         # These media cannot be used for individual long-duration sampling;
         # multiple fixed-point samples are combined for the PC-TWA result.
         return sampling_rules["individual_limit_type"]
-    if project in set(categories["powder"]) or "粉尘" in project:
+    if project_rule.get("category") == "dust":
         return "PE"
     return sampling_rules["point_limit_type"]
 
@@ -300,38 +439,63 @@ def sampling_parameters(
     project: str,
     sampling_mode: str,
     collector: str,
+    collector_supports_individual: bool,
     collector_flow_rate: str,
     people_per_shift: str,
     job_type: str,
     representative_time: str,
     detection_type: str,
     report_rules: Dict[str, object],
+    project_rule: Dict[str, str] | None = None,
+    workstation_count: str = "",
 ) -> Dict[str, str]:
     sampling_rules = report_rules["sampling"]
-    is_physical = project in set(report_rules["project_categories"]["physical"])
+    project_rule = project_rule or {}
+    is_physical = project_rule.get("category") == "physical"
     daily_times = sampling_rules["daily_times"]
-    times_per_day = str(daily_times["project_overrides"].get(project, daily_times["default"]))
+    times_per_day = str(daily_times["default"])
     # A long-duration individual measurement is one continuous measurement;
     # the three readings configured for noise and vibration apply to fixed
     # point direct-reading measurements.
     if sampling_mode == sampling_rules["individual_mode"]:
         times_per_day = str(daily_times["default"])
     days = str(sampling_rules["detection_days"].get(detection_type, sampling_rules["detection_days"]["default"]))
-    point_count = points_per_day(people_per_shift, sampling_rules)
-    limit_type = limit_type_for(project, sampling_mode, collector, report_rules)
+    point_count = points_per_day(
+        people_per_shift,
+        sampling_mode,
+        sampling_rules,
+        workstation_count,
+    )
+    limit_type = limit_type_for(
+        project,
+        sampling_mode,
+        collector,
+        collector_supports_individual,
+        report_rules,
+        project_rule,
+    )
     if is_physical:
+        is_individual = sampling_mode == sampling_rules["individual_mode"]
         sampling_time = "/"
-        if project == "噪声" and sampling_mode == sampling_rules["individual_mode"]:
+        if (
+            project_rule.get("sampling_policy") == "mobile_individual"
+            and is_individual
+        ):
             sampling_time = individual_sampling_time(
                 project,
                 job_type,
                 representative_time,
                 sampling_rules,
+                project_rule,
             )
         return {
             "limit_type": limit_type,
             "sampling_mode": sampling_mode,
-            "time_type": sampling_rules["direct_read_time_type"],
+            "time_type": (
+                sampling_rules["long_time_type"]
+                if is_individual
+                else sampling_rules["short_time_type"]
+            ),
             "flow_rate": collector_flow_rate,
             "points_per_day": point_count,
             "times_per_day": times_per_day,
@@ -339,10 +503,7 @@ def sampling_parameters(
             "sampling_time": sampling_time,
         }
 
-    is_short_term = collector in {
-        sampling_rules["sample_bag_collector"],
-        sampling_rules["absorption_solution_collector"],
-    } or sampling_mode == sampling_rules["point_mode"]
+    is_short_term = not collector_supports_individual or sampling_mode == sampling_rules["point_mode"]
     return {
         "limit_type": limit_type,
         "sampling_mode": sampling_mode,
@@ -354,7 +515,13 @@ def sampling_parameters(
         "sampling_time": (
             sampling_rules["point_sampling_time"]
             if is_short_term
-            else individual_sampling_time(project, job_type, representative_time, sampling_rules)
+            else individual_sampling_time(
+                project,
+                job_type,
+                representative_time,
+                sampling_rules,
+                project_rule,
+            )
         ),
     }
 
@@ -371,20 +538,55 @@ def merge_projects_by_collector(
     grouped: Dict[Tuple[str, ...], Dict[str, str]] = {}
     project_orders: Dict[Tuple[str, ...], List[str]] = {}
     sampling_rules = report_rules["sampling"]
-    main_mobile_duration: Dict[Tuple[str, str], float] = {}
+    main_mobile_duration: Dict[str, float] = {}
+    filter_duration_by_target: Dict[Tuple[str, str], float] = {}
+    job_overall_duration: Dict[str, float] = {}
     for row in rows:
         if row.get("job_type", "") != sampling_rules["mobile_job_type"]:
             continue
         duration = duration_hours(row.get("representative_time", ""))
         if duration is None:
             continue
-        context = (row.get("workplace", ""), row.get("position", ""))
-        main_mobile_duration[context] = max(main_mobile_duration.get(context, 0), duration)
+        job_group = row.get("job_group_id", "") or "|".join(
+            (row.get("job_workplace", "") or row.get("workplace", ""), row.get("position", ""))
+        )
+        main_mobile_duration[job_group] = max(main_mobile_duration.get(job_group, 0), duration)
+        overall_duration = duration_hours(row.get("job_representative_time", ""))
+        if overall_duration is not None:
+            job_overall_duration[job_group] = overall_duration
+        point_collector = collector_for_project(
+            row.get("project", ""),
+            sampling_rules["point_mode"],
+            collector_index,
+            rule_index,
+            report_rules,
+        )["collector"]
+        if sampling_rules["dust_filter_keyword"] in point_collector:
+            target_key = (job_group, row.get("target", ""))
+            filter_duration_by_target[target_key] = max(
+                filter_duration_by_target.get(target_key, 0),
+                duration,
+            )
+
+    full_shift_filter_jobs = {
+        job_group
+        for job_group, overall_duration in job_overall_duration.items()
+        if abs(
+            sum(
+                duration
+                for (candidate_group, _target), duration in filter_duration_by_target.items()
+                if candidate_group == job_group
+            )
+            - overall_duration
+        )
+        <= 0.25
+    }
 
     for row in rows:
         source = {key: row.get(key, "") for key in table3_keys}
         sampling_context = source.get("target", "")
         project = source.get("project", "")
+        project_rule = rule_index.get(normalize_lookup(project), {})
         initial_collector = collector_for_project(
             project,
             sampling_rules["point_mode"],
@@ -397,20 +599,36 @@ def merge_projects_by_collector(
             source.get("job_type", ""),
             sampling_context,
             initial_collector["collector"],
+            bool(initial_collector.get("supports_individual", False)),
+            source.get("exposure_type", ""),
+            project_rule,
             report_rules,
         )
         modes = [point_or_individual]
 
         if source.get("job_type", "") == sampling_rules["mobile_job_type"]:
-            # Every mobile-work location is a sampling point. Only the longest
-            # representative work segment also receives a worker-worn sample.
+            # Every mobile-work location is a sampling point. Projects from the
+            # job's longest representative segment also receive a worker-worn
+            # sample; its duration is calculated from the overall job below.
             modes = [sampling_rules["point_mode"]]
-            context = (source.get("workplace", ""), source.get("position", ""))
+            job_group = source.get("job_group_id", "") or "|".join(
+                (
+                    source.get("job_workplace", "") or source.get("workplace", ""),
+                    source.get("position", ""),
+                )
+            )
             duration = duration_hours(source.get("representative_time", ""))
+            uses_dust_filter = (
+                sampling_rules["dust_filter_keyword"] in initial_collector["collector"]
+            )
             if (
                 point_or_individual == sampling_rules["individual_mode"]
                 and duration is not None
-                and duration == main_mobile_duration.get(context)
+                and (
+                    uses_dust_filter
+                    and job_group in full_shift_filter_jobs
+                    or duration == main_mobile_duration.get(job_group)
+                )
             ):
                 modes.append(sampling_rules["individual_mode"])
 
@@ -419,41 +637,58 @@ def merge_projects_by_collector(
             project,
             point_or_individual,
             base_collector["collector"],
+            bool(base_collector.get("supports_individual", False)),
             base_collector["flow_rate"],
             source.get("people_per_shift", ""),
             source.get("job_type", ""),
             source.get("representative_time", ""),
             detection_type,
             report_rules,
+            project_rule,
+            workstation_count=source.get("workstation_count", ""),
         )
         # Every fixed workplace record with a PC limit is supplemented with a
         # worker-worn PC-TWA sample. Physical factors use "/" and do not qualify.
         if (
             point_or_individual == sampling_rules["point_mode"]
             and source.get("job_type", "") != sampling_rules["mobile_job_type"]
-            and base_collector["collector"] not in {
-                sampling_rules["sample_bag_collector"],
-                sampling_rules["absorption_solution_collector"],
-            }
+            and bool(base_collector.get("supports_individual", False))
             and base_parameters["limit_type"] != sampling_rules["physical_limit_type"]
         ):
             modes.append(sampling_rules["individual_mode"])
 
         for sampling_mode in modes:
             filled = source.copy()
+            parameter_time = source.get("representative_time", "")
+            if sampling_mode == sampling_rules["individual_mode"]:
+                filled["workplace"] = source.get("job_workplace", "") or source.get("workplace", "")
+                parameter_time = (
+                    source.get("job_representative_time", "")
+                    or source.get("representative_time", "")
+                )
+                filled["representative_time"] = parameter_time
             collector_info = collector_for_project(project, sampling_mode, collector_index, rule_index, report_rules)
             filled["collector"] = collector_info.get("collector", "")
             filled["device"] = collector_info.get("device", "")
             filled.update(
-                sampling_parameters(
-                    project,
-                    sampling_mode,
-                    filled["collector"],
-                    collector_info["flow_rate"],
-                    source.get("people_per_shift", ""),
+                apply_collector_sampling_capabilities(
+                    sampling_parameters(
+                        project,
+                        sampling_mode,
+                        filled["collector"],
+                        bool(collector_info.get("supports_individual", False)),
+                        collector_info["flow_rate"],
+                        source.get("people_per_shift", ""),
+                        source.get("job_type", ""),
+                        parameter_time,
+                        detection_type,
+                        report_rules,
+                        project_rule,
+                        workstation_count=source.get("workstation_count", ""),
+                    ),
+                    collector_info,
                     source.get("job_type", ""),
-                    source.get("representative_time", ""),
-                    detection_type,
+                    source.get("exposure_type", ""),
                     report_rules,
                 )
             )
@@ -470,15 +705,22 @@ def merge_projects_by_collector(
                 # Representative time documents the source activity. It must
                 # not split otherwise identical sampling records when their
                 # calculated sampling duration is already the same.
-                if key not in {"project", "representative_time"}
+                if key
+                not in {
+                    "project",
+                    "representative_time",
+                    "workstation_count",
+                    "workstation_count_source",
+                }
             )
             if group_key not in grouped:
                 grouped[group_key] = filled
                 project_orders[group_key] = []
                 merged.append(grouped[group_key])
 
-            if project and project not in project_orders[group_key]:
-                project_orders[group_key].append(project)
+            display_project = display_project_name(project, rule_index)
+            if display_project and display_project not in project_orders[group_key]:
+                project_orders[group_key].append(display_project)
 
     for group_key, target in grouped.items():
         target["project"] = "、".join(project_orders[group_key])
@@ -489,8 +731,11 @@ def sort_table3_rows(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     return sorted(
         rows,
         key=lambda row: (
-            row.get("workplace", ""),
+            row.get("job_workplace", "") or row.get("workplace", ""),
             row.get("position", ""),
+            row.get("job_group_id", ""),
+            0 if row.get("sampling_mode", "") == "个体" else 1,
+            row.get("workplace", ""),
             row.get("target", ""),
             row.get("job_type", ""),
             row.get("project", ""),
@@ -509,10 +754,17 @@ def build_table3(
     output: List[Dict[str, str]] = []
     missing: List[str] = []
     table3_keys = (
+        "job_group_id",
+        "job_workplace",
+        "job_representative_time",
+        "source_job_type",
+        "job_type_inference_reason",
         "sampling_no",
         "workplace",
         "position",
         "people_per_shift",
+        "workstation_count",
+        "workstation_count_source",
         "job_type",
         "target",
         "project",
@@ -536,8 +788,8 @@ def build_table3(
     sampling_numbers: Dict[Tuple[str, str, str], str] = {}
     for filled in merged_rows:
         sampling_context = (
+            filled.get("job_group_id", ""),
             filled.get("workplace", ""),
-            filled.get("position", ""),
             filled.get("target", ""),
         )
         if sampling_context not in sampling_numbers:
@@ -547,6 +799,19 @@ def build_table3(
         for key in ("workplace", "position", "target", "project"):
             if not filled.get(key):
                 missing.append(f"Table3 {project} {key}")
+        people_match = re.search(r"\d+", filled.get("people_per_shift", ""))
+        if (
+            people_match
+            and int(people_match.group()) > 3
+            and filled.get("workstation_count_source", "") == "岗位接触表列出1个明确工位"
+            and filled.get("sampling_mode", "") == report_rules["sampling"]["point_mode"]
+        ):
+            missing.append(
+                "Table3 {workplace} {position} 相同工位数量".format(
+                    workplace=filled.get("workplace", ""),
+                    position=filled.get("position", ""),
+                )
+            )
         output.append(filled)
     return output, missing
 
@@ -576,6 +841,7 @@ def run_fill_script(script: Path, template: Path, payload: Path, output: Path, c
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pdf", required=True, type=Path)
+    parser.add_argument("--component-report", type=Path)
     parser.add_argument("--template", required=True, type=Path)
     parser.add_argument("--rules", required=True, type=Path)
     parser.add_argument("--config", type=Path)
@@ -586,6 +852,7 @@ def main() -> int:
     scripts_dir = Path(__file__).resolve().parent
     root_dir = scripts_dir.parent
     parse_script = scripts_dir / "parse_pdf.py"
+    component_parse_script = scripts_dir / "parse_component_report.py"
     fill_script = scripts_dir / "fill_docx.py"
     collector_path = root_dir / "knowledge" / "collector.json"
     config_path = args.config or root_dir / "knowledge" / "report_rules.json"
@@ -593,12 +860,27 @@ def main() -> int:
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             raw_payload_path = Path(tmpdir) / "parsed.json"
+            component_payload_path = Path(tmpdir) / "components.json"
             final_payload_path = Path(tmpdir) / "payload.json"
             run_parse_script(parse_script, args.pdf, raw_payload_path, config_path)
             parsed = json.loads(raw_payload_path.read_text(encoding="utf-8"))
             rule_index = load_rule_index(args.rules)
             collector_index = load_collector_index(collector_path)
             report_rules = load_report_rules(config_path)
+            component_payload: Dict[str, object] = {"samples": []}
+            component_missing: List[str] = []
+            if args.component_report:
+                run_component_parse_script(
+                    component_parse_script,
+                    args.component_report,
+                    component_payload_path,
+                )
+                component_payload = json.loads(component_payload_path.read_text(encoding="utf-8"))
+                component_missing = replace_component_placeholders(
+                    parsed,
+                    component_payload,
+                    report_rules,
+                )
             table2, missing2 = build_table2(
                 parsed.get("projects", []),
                 parsed.get("table3", []),
@@ -612,7 +894,9 @@ def main() -> int:
                 parsed.get("header", {}).get("detection_type", ""),
                 report_rules,
             )
-            missing_fields = dedupe(parsed.get("missing_fields", []) + missing2 + missing3)
+            missing_fields = dedupe(
+                parsed.get("missing_fields", []) + component_missing + missing2 + missing3
+            )
             payload = {
                 "header": parsed.get("header", {}),
                 "projects": parsed.get("projects", []),
@@ -620,7 +904,19 @@ def main() -> int:
                 "table3": table3,
                 "missing_fields": missing_fields,
                 "survey_tables": parsed.get("survey_tables", {}),
+                "inference_notes": dedupe(
+                    [
+                        "{position}: {reason}".format(
+                            position=row.get("position", ""),
+                            reason=row.get("job_type_inference_reason", ""),
+                        )
+                        for row in parsed.get("table3", [])
+                        if row.get("job_type_inference_reason", "")
+                    ]
+                ),
             }
+            if args.component_report:
+                payload["component_analysis"] = component_payload
             final_payload_path.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",

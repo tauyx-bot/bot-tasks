@@ -2,17 +2,178 @@
   "header": {
     "detection_task_no": "粤鑫职定期2026150号",
     "unit_name": "中山市泽弘五金制品有限公司",
-    "contact": "林小姐 18664412607",
+    "contact": "林小姐18664412607",
     "address": "中山市小榄镇同茂工业大道（西）钢宝路7号B栋八楼",
-    "detection_type": "定期检测"
+    "detection_type": "定期检测",
+    "expected_sampling_time": "8:00-12:00，14:00-18:00"
   },
   "survey_tables": {
     "basic_info": [],
-    "materials": [],
-    "products": [],
-    "equipment": [],
-    "protection_facilities": [],
-    "ppe": [],
+    "materials": [
+      {
+        "name": "电泳漆",
+        "annual_use": "2T",
+        "physical_state": "液态",
+        "components": "异丙醇1.24%、其他苯系物8.97%、低于报告限组分0.66%、顶空气中空气和水等无机组分89.13%",
+        "workplace": "生产车间",
+        "position": "电泳工"
+      },
+      {
+        "name": "清洗剂",
+        "annual_use": "2T",
+        "physical_state": "液态",
+        "components": "顶空气中空气和水等无机组分100.00%",
+        "workplace": "生产车间",
+        "position": "前处理工"
+      },
+      {
+        "name": "锌合金",
+        "annual_use": "25T",
+        "physical_state": "固态",
+        "components": "锌合金",
+        "workplace": "各车间",
+        "position": "各工种"
+      }
+    ],
+    "products": [
+      {
+        "name": "旅游纪念品加工",
+        "annual_output": "25T",
+        "physical_state": "固态",
+        "packaging": "纸箱"
+      }
+    ],
+    "equipment": [
+      {
+        "name": "打磨机",
+        "model": "/",
+        "total_count": "8",
+        "running_count": "3",
+        "workplace": "打磨车间",
+        "position": "打磨工",
+        "layout": "1.机群式布局"
+      },
+      {
+        "name": "电泳槽",
+        "model": "/",
+        "total_count": "6",
+        "running_count": "3",
+        "workplace": "生产车间",
+        "position": "电泳工",
+        "layout": "1.机群式布局"
+      },
+      {
+        "name": "清水槽",
+        "model": "/",
+        "total_count": "4",
+        "running_count": "3",
+        "workplace": "生产车间",
+        "position": "电泳工",
+        "layout": "1.机群式布局"
+      },
+      {
+        "name": "电解槽",
+        "model": "/",
+        "total_count": "1",
+        "running_count": "0",
+        "workplace": "生产车间",
+        "position": "/",
+        "layout": "1.机群式布局"
+      },
+      {
+        "name": "纯水机",
+        "model": "/",
+        "total_count": "1",
+        "running_count": "1",
+        "workplace": "生产车间",
+        "position": "/",
+        "layout": "1.机群式布局"
+      },
+      {
+        "name": "电烤箱",
+        "model": "/",
+        "total_count": "2",
+        "running_count": "2",
+        "workplace": "生产车间",
+        "position": "电泳工",
+        "layout": "1.机群式布局"
+      }
+    ],
+    "protection_facilities": [
+      {
+        "workplace": "生产车间",
+        "target": "电泳工位",
+        "name": "抽风系统",
+        "type": "防毒",
+        "total_count": "1",
+        "running_count": "1",
+        "notes": ""
+      },
+      {
+        "workplace": "生产车间",
+        "target": "电烤箱工位",
+        "name": "抽风系统",
+        "type": "防毒",
+        "total_count": "1",
+        "running_count": "1",
+        "notes": ""
+      },
+      {
+        "workplace": "打磨车间",
+        "target": "打磨工位",
+        "name": "集尘系统",
+        "type": "防尘",
+        "total_count": "1",
+        "running_count": "1",
+        "notes": ""
+      }
+    ],
+    "ppe": [
+      {
+        "classification": "呼吸防护",
+        "category": "防尘口罩",
+        "manufacturer": "保为康",
+        "model": "9600（KN90）",
+        "workplace": "打磨车间",
+        "position": "打磨工",
+        "replacement_cycle": "一天两个",
+        "wearing_status": "正常佩戴",
+        "notes": ""
+      },
+      {
+        "classification": "眼面防护",
+        "category": "防护镜",
+        "manufacturer": "/",
+        "model": "/",
+        "workplace": "生产车间",
+        "position": "电泳工",
+        "replacement_cycle": "破损即换",
+        "wearing_status": "正常佩戴",
+        "notes": ""
+      },
+      {
+        "classification": "手部防护",
+        "category": "橡胶手套",
+        "manufacturer": "/",
+        "model": "/",
+        "workplace": "生产车间",
+        "position": "电泳工",
+        "replacement_cycle": "一天两个",
+        "wearing_status": "正常佩戴",
+        "notes": ""
+      },
+      {
+        "classification": "听力防护",
+        "category": "耳塞",
+        "manufacturer": "保盾",
+        "model": "352-2（SNR：38dB）",
+        "workplace": "生产车间、打磨车间",
+        "position": "打磨工、电泳工",
+        "replacement_cycle": "破损即换",
+        "wearing_status": "正常佩戴",
+        "notes": ""
+      }
+    ],
     "overall_exposure": [
       [
         "打磨车间",
@@ -159,9 +320,16 @@
   ],
   "table3": [
     {
+      "job_group_id": "overall:2",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "流动作业",
+      "job_type_inference_reason": "",
       "workplace": "生产车间",
       "position": "电泳工",
       "people_per_shift": "1",
+      "workstation_count": "3",
+      "workstation_count_source": "设备表运行数：电泳槽共3台",
       "job_type": "流动",
       "target": "电泳工位",
       "project": "噪声",
@@ -170,9 +338,16 @@
       "representative_time": "6h"
     },
     {
+      "job_group_id": "overall:2",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "流动作业",
+      "job_type_inference_reason": "",
       "workplace": "生产车间",
       "position": "电泳工",
       "people_per_shift": "1",
+      "workstation_count": "3",
+      "workstation_count_source": "设备表运行数：电泳槽共3台",
       "job_type": "流动",
       "target": "电泳工位",
       "project": "异丙醇",
@@ -181,9 +356,16 @@
       "representative_time": "6h"
     },
     {
+      "job_group_id": "overall:2",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "流动作业",
+      "job_type_inference_reason": "",
       "workplace": "生产车间",
       "position": "电泳工",
       "people_per_shift": "1",
+      "workstation_count": "1",
+      "workstation_count_source": "岗位接触表列出1个明确工位",
       "job_type": "流动",
       "target": "超声波清洗工位",
       "project": "噪声",
@@ -192,9 +374,16 @@
       "representative_time": "1.5h"
     },
     {
+      "job_group_id": "overall:2",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "流动作业",
+      "job_type_inference_reason": "",
       "workplace": "生产车间",
       "position": "电泳工",
       "people_per_shift": "1",
+      "workstation_count": "2",
+      "workstation_count_source": "设备表运行数：电烤箱共2台",
       "job_type": "流动",
       "target": "电烤箱工位",
       "project": "噪声",
@@ -203,9 +392,16 @@
       "representative_time": "0.5h"
     },
     {
+      "job_group_id": "overall:2",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "流动作业",
+      "job_type_inference_reason": "",
       "workplace": "生产车间",
       "position": "电泳工",
       "people_per_shift": "1",
+      "workstation_count": "2",
+      "workstation_count_source": "设备表运行数：电烤箱共2台",
       "job_type": "流动",
       "target": "电烤箱工位",
       "project": "高温",
@@ -214,9 +410,16 @@
       "representative_time": "0.5h"
     },
     {
+      "job_group_id": "overall:0",
+      "job_workplace": "打磨车间",
+      "job_representative_time": "8h",
+      "source_job_type": "固定作业",
+      "job_type_inference_reason": "",
       "workplace": "打磨车间",
       "position": "打磨工",
       "people_per_shift": "3",
+      "workstation_count": "3",
+      "workstation_count_source": "设备表运行数：打磨机共3台",
       "job_type": "固定",
       "target": "打磨工位",
       "project": "噪声",
@@ -225,9 +428,16 @@
       "representative_time": "8h"
     },
     {
+      "job_group_id": "overall:0",
+      "job_workplace": "打磨车间",
+      "job_representative_time": "8h",
+      "source_job_type": "固定作业",
+      "job_type_inference_reason": "",
       "workplace": "打磨车间",
       "position": "打磨工",
       "people_per_shift": "3",
+      "workstation_count": "3",
+      "workstation_count_source": "设备表运行数：打磨机共3台",
       "job_type": "固定",
       "target": "打磨工位",
       "project": "砂轮磨尘",
@@ -236,9 +446,16 @@
       "representative_time": "8h"
     },
     {
+      "job_group_id": "overall:0",
+      "job_workplace": "打磨车间",
+      "job_representative_time": "8h",
+      "source_job_type": "固定作业",
+      "job_type_inference_reason": "",
       "workplace": "打磨车间",
       "position": "打磨工",
       "people_per_shift": "3",
+      "workstation_count": "3",
+      "workstation_count_source": "设备表运行数：打磨机共3台",
       "job_type": "固定",
       "target": "打磨工位",
       "project": "手传振动",
@@ -247,9 +464,16 @@
       "representative_time": "8h"
     },
     {
+      "job_group_id": "overall:1",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "固定作业",
+      "job_type_inference_reason": "",
       "workplace": "生产车间",
       "position": "前处理工",
       "people_per_shift": "1",
+      "workstation_count": "1",
+      "workstation_count_source": "岗位接触表列出1个明确工位",
       "job_type": "固定",
       "target": "前处理工位",
       "project": "噪声",
@@ -258,9 +482,16 @@
       "representative_time": "8h"
     },
     {
+      "job_group_id": "overall:3",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "固定作业",
+      "job_type_inference_reason": "",
       "workplace": "生产车间",
       "position": "上挂工",
       "people_per_shift": "5",
+      "workstation_count": "1",
+      "workstation_count_source": "岗位接触表列出1个明确工位",
       "job_type": "固定",
       "target": "上挂工位",
       "project": "噪声",
@@ -269,9 +500,16 @@
       "representative_time": "8h"
     },
     {
+      "job_group_id": "overall:4",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "固定作业",
+      "job_type_inference_reason": "",
       "workplace": "生产车间",
       "position": "下挂工",
       "people_per_shift": "5",
+      "workstation_count": "1",
+      "workstation_count_source": "岗位接触表列出1个明确工位",
       "job_type": "固定",
       "target": "下挂工位",
       "project": "噪声",

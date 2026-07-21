@@ -1,0 +1,258 @@
+{
+  "task1_matched": 147,
+  "task1_updated": 147,
+  "task2_correct": 0,
+  "task2_discrepancies": [],
+  "task2_no_match": [
+    {
+      "key": "锂",
+      "standard": "GBZ/T 160.11—2004",
+      "collector": "微孔滤膜"
+    },
+    {
+      "key": "镍",
+      "standard": "GBZ/T 160.16—2004",
+      "collector": "微孔滤膜"
+    },
+    {
+      "key": "氨",
+      "standard": "GBZ/T 160.29—2004",
+      "collector": "吸收液"
+    },
+    {
+      "key": "磷化氢",
+      "standard": "GBZ/T160.30—2004",
+      "collector": "吸收液"
+    },
+    {
+      "key": "磷酸",
+      "standard": "GBZ/T 160.30—2004",
+      "collector": "吸收液"
+    },
+    {
+      "key": "二氧化硫",
+      "standard": "GBZ/T 160.33—2004",
+      "collector": "吸收液"
+    },
+    {
+      "key": "硫化氢",
+      "standard": "GBZ/T 160.33—2004",
+      "collector": "吸收液"
+    },
+    {
+      "key": "氟化物",
+      "standard": "GBZ/T 160.36—2004",
+      "collector": "微孔滤膜"
+    },
+    {
+      "key": "氯",
+      "standard": "GBZ/T 160.37—2004",
+      "collector": "吸收液"
+    },
+    {
+      "key": "氯化物",
+      "standard": "GBZ/T 160.37—2004",
+      "collector": "微孔滤膜"
+    },
+    {
+      "key": "萘",
+      "standard": "GBZ/T 160.44—2004",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "1,2,3-三氯丙烷",
+      "standard": "GBZ/T 160.45—2007",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "1,2-二氯丙烷",
+      "standard": "GBZ/T 160.45—2007",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "1,2-二氯乙烷",
+      "standard": "GBZ/T 160.45—2007",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "碘甲烷",
+      "standard": "GBZ/T 160.45—2007",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "二丙酮醇",
+      "standard": "GBZ/T 160.48—2007",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "乙硫醇",
+      "standard": "GBZ/T 160.49—2004",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "甲硫醇",
+      "standard": "GBZ/T 160.49—2004",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "2-丁氧基乙醇",
+      "standard": "GBZ/T 160.50—2004",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "2-甲氧基乙醇",
+      "standard": "GBZ/T 160.50—2004",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "酚",
+      "standard": "GBZ/T 160.51—2007",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "乙醚",
+      "standard": "GBZ/T 160.52—2007",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "丙烯醛",
+      "standard": "GBZ/T 160.54—2007",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "异佛尔酮",
+      "standard": "GBZ/T 160.55—2007",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "环己酮",
+      "standard": "GBZ/T 160.56—2004",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "环氧丙烷",
+      "standard": "GBZ/T 160.58—2004",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "环氧乙烷",
+      "standard": "GBZ/T 160.58—2004",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "环氧氯丙烷",
+      "standard": "GBZ/T 160.58—2004",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "丙烯酸",
+      "standard": "GBZ/T 160.59—2004",
+      "collector": "硅胶管，溶剂解吸型"
+    },
+    {
+      "key": "丙酸",
+      "standard": "GBZ/T 160.59—2004",
+      "collector": "硅胶管，溶剂解吸型"
+    },
+    {
+      "key": "N,N-二甲基乙酰胺",
+      "standard": "GBZ/T 160.62—2004",
+      "collector": "硅胶管，溶剂解吸型"
+    },
+    {
+      "key": "N,N-二甲基甲酰胺",
+      "standard": "GBZ/T 160.62—2004",
+      "collector": "硅胶管，溶剂解吸型"
+    },
+    {
+      "key": "丙烯酰胺",
+      "standard": "GBZ/T 160.62—2004",
+      "collector": "微孔滤膜"
+    },
+    {
+      "key": "乙酸丁酯",
+      "standard": "GBZ/T 160.63—2007",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "乙酸丙酯",
+      "standard": "GBZ/T 160.63—2007",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "乙酸乙酯",
+      "standard": "GBZ/T 160.63—2007",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "乙酸甲酯",
+      "standard": "GBZ/T 160.63—2007",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "乙酸乙烯酯",
+      "standard": "GBZ/T 160.64—2004",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "苯胺",
+      "standard": "GBZ/T 160.72—2004",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "氯化苦",
+      "standard": "GBZ/T 160.73—2004",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "四氢呋喃",
+      "standard": "GBZ/T 160.75—2004",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "总粉尘浓度",
+      "standard": "GBZ/T 192.1—2025",
+      "collector": "丙纶滤膜"
+    },
+    {
+      "key": "呼吸性粉尘浓度",
+      "standard": "GBZ/T 192.2—2025",
+      "collector": "丙纶滤膜"
+    },
+    {
+      "key": "粉尘分散度",
+      "standard": "GBZ/T 192.3—2007",
+      "collector": "丙纶滤膜"
+    },
+    {
+      "key": "粉尘中游离二氧化硅",
+      "standard": "GBZ/T 192.4—2007",
+      "collector": "丙纶滤膜"
+    },
+    {
+      "key": "石棉纤维",
+      "standard": "GBZ/T 192.5—2007",
+      "collector": "丙纶滤膜"
+    },
+    {
+      "key": "二甲氧基甲烷",
+      "standard": "GBZ/T 300.100—2018",
+      "collector": "活性炭管，溶剂解吸型"
+    },
+    {
+      "key": "糠醛",
+      "standard": "GBZ/T 300.100—2018",
+      "collector": "硅胶管，溶剂解吸型"
+    },
+    {
+      "key": "钴",
+      "standard": "GBZ/T 300.10—2017",
+      "collector": "微孔滤膜"
+    },
+    {
+      "key": "三氯乙醛",
+      "standard": "GBZ/T 300.101—2017",
+      "collector": "活性炭管，溶剂解吸型"
+    }
+  ]
+}

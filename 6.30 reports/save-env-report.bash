@@ -20,10 +20,14 @@ mkdir -p \
   "$STAGE_DIR/template"
 
 cp "$PROJECT_DIR/SKILL.md" "$STAGE_DIR/"
+cp "$PROJECT_DIR/knowledge/collector.json" "$STAGE_DIR/knowledge/"
 cp "$PROJECT_DIR/knowledge/data.json" "$STAGE_DIR/knowledge/"
+cp "$PROJECT_DIR/knowledge/pending_business_rules.json" "$STAGE_DIR/knowledge/"
+cp "$PROJECT_DIR/knowledge/report_rules.json" "$STAGE_DIR/knowledge/"
 cp "$PROJECT_DIR/scripts/fill_docx.py" "$STAGE_DIR/scripts/"
 cp "$PROJECT_DIR/scripts/generate_report.py" "$STAGE_DIR/scripts/"
 cp "$PROJECT_DIR/scripts/parse_pdf.py" "$STAGE_DIR/scripts/"
+cp "$PROJECT_DIR/scripts/parse_component_report.py" "$STAGE_DIR/scripts/"
 cp "$PROJECT_DIR/template/plan_template.docx" "$STAGE_DIR/template/"
 
 rm -f "$OUTPUT_ZIP"
@@ -40,7 +44,7 @@ root = Path("env-report")
 with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as zf:
     for path in sorted(root.rglob("*")):
         if path.is_file():
-            zf.write(path, path.as_posix())
+            zf.write(path, path.relative_to(root).as_posix())
 PY
 )
 

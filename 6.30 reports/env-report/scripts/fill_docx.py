@@ -112,6 +112,14 @@ def ensure_rows(
         note_row_idx += 1
 
 
+def trim_unused_data_rows(table, start_row_idx: int, data_len: int) -> None:
+    """Remove unused template rows while preserving the final note row."""
+    first_unused = start_row_idx + data_len
+    while first_unused < len(table.rows) - 1:
+        row = table.rows[first_unused]
+        row._tr.getparent().remove(row._tr)
+
+
 def load_payload(path: Path) -> Dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -149,6 +157,7 @@ def write_header(table, header: Dict[str, str]) -> None:
         ((0, 5), header.get("contact", "")),
         ((1, 1), header.get("address", "")),
         ((1, 5), format_detection_type(header.get("detection_type", ""))),
+        ((2, 5), header.get("expected_sampling_time", "")),
     ]
     for (row_idx, cell_idx), value in mapping:
         set_cell_text(table.rows[row_idx].cells[cell_idx], value)
@@ -159,6 +168,7 @@ def write_table2(table, rows: List[Dict[str, str]]) -> None:
     template_row = 1
     note_row = len(table.rows) - 1
     ensure_rows(table, start_row, len(rows), template_row, note_row)
+    trim_unused_data_rows(table, start_row, len(rows))
     for offset, row in enumerate(rows):
         target = table.rows[start_row + offset]
         set_cell_text(target.cells[0], row.get("检测项目", ""))
@@ -241,28 +251,49 @@ def write_table3(table, rows: List[Dict[str, str]]) -> None:
     template_row = 1
     note_row = len(table.rows) - 1
     ensure_rows(table, start_row, len(rows), template_row, note_row)
+    trim_unused_data_rows(table, start_row, len(rows))
     for offset, row in enumerate(rows):
         target = table.rows[start_row + offset]
         for idx, key in enumerate(TABLE3_KEYS):
             set_cell_text(target.cells[idx], row.get(key, ""))
     if rows:
         end_row = start_row + len(rows) - 1
-        workplace_and_position_columns = (1, 2)
-        # A workplace may span multiple jobs, but must not merge across job boundaries.
-        merge_vertical_same_value_cells(table, start_row, end_row, 1, required_match_column_idxs=(2,))
-        # Detection position, people per shift, and job type may merge only when
-        # their rows belong to the same workplace-and-position group.
-        for column in (2, 3, 4):
+        # The displayed workplace can change within a mobile job. Merge the job
+        # attributes by the parser's overall-job identity instead of splitting
+        # one worker and headcount into a separate job per sampling location.
+        group_start = start_row
+        current_group = rows[0].get("job_group_id", "") or "|".join(
+            (
+                rows[0].get("job_workplace", "") or rows[0].get("workplace", ""),
+                rows[0].get("position", ""),
+            )
+        )
+        job_groups: List[Tuple[int, int]] = []
+        for offset, row in enumerate(rows[1:], start=1):
+            group = row.get("job_group_id", "") or "|".join(
+                (
+                    row.get("job_workplace", "") or row.get("workplace", ""),
+                    row.get("position", ""),
+                )
+            )
+            if group == current_group:
+                continue
+            job_groups.append((group_start, start_row + offset - 1))
+            group_start = start_row + offset
+            current_group = group
+        job_groups.append((group_start, end_row))
+
+        for job_start, job_end in job_groups:
+            merge_vertical_same_value_cells(table, job_start, job_end, 1, required_match_column_idxs=(2,))
+            for column in (2, 3, 4, 8):
+                merge_vertical_same_value_cells(table, job_start, job_end, column)
             merge_vertical_same_value_cells(
                 table,
-                start_row,
-                end_row,
-                column,
-                required_match_column_idxs=workplace_and_position_columns,
+                job_start,
+                job_end,
+                5,
+                required_match_column_idxs=(1, 2),
             )
-        # Target and exposure type remain within the same workplace-and-position group.
-        for column in (5, 8):
-            merge_vertical_same_value_cells(table, start_row, end_row, column, required_match_column_idxs=(1, 2))
         # Sampling numbers are assigned by workplace, position, and target; show
         # one vertically merged number instead of repeating it on every project row.
         merge_vertical_same_value_cells(table, start_row, end_row, 0, required_match_column_idxs=(1, 2, 5))

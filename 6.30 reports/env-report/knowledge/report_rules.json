@@ -1,16 +1,13 @@
 {
-  "project_categories": {
-    "physical": ["噪声", "高温", "手传振动"],
-    "powder": ["其他粉尘", "砂轮磨尘"]
-  },
-  "project_aliases": {
-    "戊烷（全部异构体）": "正戊烷"
-  },
   "parsing": {
     "ignored_projects": ["", "/", "无"],
     "detail_stop_markers": ["七、其他附件", "工艺名称"],
     "workbench_suffix": "工位",
     "detail_preferred_exposure_type": "②"
+  },
+  "composition": {
+    "placeholder_markers": ["（取样分析）", "(取样分析)"],
+    "ignored_components": ["其他烃类化合物"]
   },
   "sampling": {
     "mobile_job_type": "流动",
@@ -25,9 +22,6 @@
     "long_time_type": "长时间",
     "point_sampling_time": "15min",
     "individual_sampling_time": "3h",
-    "individual_noise_sampling_time": "6h",
-    "sample_bag_collector": "采气袋",
-    "absorption_solution_collector": "吸收液",
     "dust_filter_keyword": "丙纶滤膜",
     "pc_limit_types": ["PC-TWA", "PC-STEL"],
     "daily_points_by_people_per_shift": [
@@ -35,12 +29,14 @@
       {"maximum_people": 10, "points": 2},
       {"maximum_people": null, "points": 3}
     ],
+    "daily_objects_by_people_per_shift": [
+      {"maximum_people": 1, "objects": 1},
+      {"maximum_people": 5, "objects": 2},
+      {"maximum_people": 10, "objects": 3},
+      {"maximum_people": null, "objects": 4}
+    ],
     "daily_times": {
-      "default": 1,
-      "project_overrides": {
-        "高温": 3,
-        "手传振动": 3
-      }
+      "default": 1
     },
     "detection_days": {
       "default": 1,

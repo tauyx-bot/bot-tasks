@@ -11,7 +11,14 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 
-HEADER_KEYS = ["detection_task_no", "unit_name", "contact", "address", "detection_type"]
+HEADER_KEYS = [
+    "detection_task_no",
+    "unit_name",
+    "contact",
+    "address",
+    "detection_type",
+    "expected_sampling_time",
+]
 SURVEY_TABLE_KEYS = [
     "basic_info",
     "materials",
@@ -24,9 +31,16 @@ SURVEY_TABLE_KEYS = [
     "attachments",
 ]
 TABLE3_KEYS = [
+    "job_group_id",
+    "job_workplace",
+    "job_representative_time",
+    "source_job_type",
+    "job_type_inference_reason",
     "workplace",
     "position",
     "people_per_shift",
+    "workstation_count",
+    "workstation_count_source",
     "job_type",
     "target",
     "project",
@@ -142,7 +156,9 @@ def extract_header(full_text: str, raw_tables: List[List[List[str]]]) -> Dict[st
         or search(r"检测类型\s+(.+?)\s+是否存在射线装置")
     )
 
-    contact = " ".join(part for part in (contact_name, contact_phone) if part).strip()
+    # The target form has one compact contact cell; source fields already carry
+    # any punctuation needed inside a name or phone number.
+    contact = "".join(part for part in (contact_name, contact_phone) if part).strip()
     return {
         "detection_task_no": detection_task_no,
         "unit_name": unit_name,
@@ -195,6 +211,125 @@ def parse_exposure_rows(raw_tables: List[List[List[str]]]) -> tuple[List[List[st
             elif section == "detail" and len(row) >= 5:
                 detail_rows.append(row)
     return overall_rows, detail_rows
+
+
+def parse_equipment_rows(raw_tables: List[List[List[str]]]) -> List[Dict[str, str]]:
+    """Extract the production-equipment section, including page continuations."""
+    rows: List[Dict[str, str]] = []
+    in_section = False
+    saw_header = False
+    for table in raw_tables:
+        for row in table:
+            if not row:
+                continue
+            joined = "".join(row)
+            if "三、主要生产设备情况" in joined:
+                in_section = True
+                saw_header = False
+                continue
+            if not in_section:
+                continue
+            if "设备名称" in joined and "运行数" in joined and "使用岗位" in joined:
+                saw_header = True
+                continue
+            if "设备布局：" in joined or "四、职业病防护设施" in joined:
+                in_section = False
+                saw_header = False
+                continue
+            if not saw_header or len(row) < 7:
+                continue
+            values = row[:7]
+            if not re.fullmatch(r"\d+(?:\.\d+)?", values[2]) or not re.fullmatch(
+                r"\d+(?:\.\d+)?", values[3]
+            ):
+                continue
+            rows.append(
+                {
+                    "name": values[0],
+                    "model": values[1],
+                    "total_count": values[2],
+                    "running_count": values[3],
+                    "workplace": values[4],
+                    "position": values[5],
+                    "layout": values[6],
+                }
+            )
+    return rows
+
+
+def parse_rows_after_header(
+    raw_tables: List[List[List[str]]],
+    required_header_terms: tuple[str, ...],
+    fields: tuple[str, ...],
+    stop_terms: tuple[str, ...],
+    minimum_fields: int | None = None,
+) -> List[Dict[str, str]]:
+    """Extract a survey section that may continue in a new PDF table/page."""
+    parsed: List[Dict[str, str]] = []
+    in_section = False
+    for table in raw_tables:
+        for row in table:
+            if not row:
+                continue
+            joined = "".join(row)
+            if all(term in joined for term in required_header_terms):
+                in_section = True
+                continue
+            if not in_section:
+                continue
+            if joined.startswith("注：") or any(term in joined for term in stop_terms):
+                in_section = False
+                continue
+            required_count = minimum_fields if minimum_fields is not None else len(fields)
+            if len(row) < required_count:
+                continue
+            values = row[: len(fields)] + [""] * max(0, len(fields) - len(row))
+            parsed.append(dict(zip(fields, values)))
+    return parsed
+
+
+def parse_supporting_survey_tables(
+    raw_tables: List[List[List[str]]],
+) -> Dict[str, List[Dict[str, str]]]:
+    """Extract supporting tables that can inform current or future plan rules."""
+    return {
+        "materials": parse_rows_after_header(
+            raw_tables,
+            ("原辅材料名称", "主要成分", "使用岗位"),
+            ("name", "annual_use", "physical_state", "components", "workplace", "position"),
+            ("产品名称", "三、主要生产设备情况"),
+        ),
+        "products": parse_rows_after_header(
+            raw_tables,
+            ("产品名称", "年产量", "包装方式"),
+            ("name", "annual_output", "physical_state", "packaging"),
+            ("三、主要生产设备情况",),
+        ),
+        "protection_facilities": parse_rows_after_header(
+            raw_tables,
+            ("设置地点或岗位", "防护设施名称", "运行数"),
+            ("workplace", "target", "name", "type", "total_count", "running_count", "notes"),
+            ("防护用品分类", "五、职业病防护用品"),
+            minimum_fields=6,
+        ),
+        "ppe": parse_rows_after_header(
+            raw_tables,
+            ("防护用品分类", "生产厂家", "使用岗位"),
+            (
+                "classification",
+                "category",
+                "manufacturer",
+                "model",
+                "workplace",
+                "position",
+                "replacement_cycle",
+                "wearing_status",
+                "notes",
+            ),
+            ("六、岗位设置和接触情况",),
+            minimum_fields=8,
+        ),
+    }
 
 
 def parse_overall_rows(rows: List[List[str]]) -> List[Dict[str, str]]:
@@ -331,9 +466,16 @@ def match_overall_row(detail_row: Dict[str, str], overall_rows: List[Dict[str, s
 
 
 def make_table3_row(
+    job_group_id: str,
+    job_workplace: str,
+    job_representative_time: str,
+    source_job_type: str,
+    job_type_inference_reason: str,
     workplace: str,
     position: str,
     people_per_shift: str,
+    workstation_count: str,
+    workstation_count_source: str,
     job_type: str,
     target: str,
     project: str,
@@ -345,9 +487,16 @@ def make_table3_row(
     row = {key: "" for key in TABLE3_KEYS}
     row.update(
         {
+            "job_group_id": job_group_id,
+            "job_workplace": job_workplace,
+            "job_representative_time": job_representative_time,
+            "source_job_type": source_job_type,
+            "job_type_inference_reason": job_type_inference_reason,
             "workplace": workplace,
             "position": position,
             "people_per_shift": people_per_shift,
+            "workstation_count": workstation_count,
+            "workstation_count_source": workstation_count_source,
             "job_type": job_type,
             "target": target,
             "project": project,
@@ -373,6 +522,89 @@ def work_duration(work_time: str) -> str:
     return f"{hours:g}h"
 
 
+def overall_representative_time(overall_row: Dict[str, str]) -> str:
+    """Prefer the surveyed daily exposure and fall back to the shift schedule."""
+    match = re.search(r"(\d+(?:\.\d+)?)", overall_row.get("daily_exposure", ""))
+    if match:
+        hours = float(match.group(1))
+        if hours > 0:
+            return f"{hours:g}h"
+    return work_duration(overall_row.get("work_time", ""))
+
+
+def normalize_work_time_window(value: str) -> str:
+    """Normalize every shift interval while discarding summary annotations."""
+    intervals = re.findall(
+        r"(\d{1,2})[：:](\d{2})\s*[-－—]\s*(\d{1,2})[：:](\d{2})",
+        value or "",
+    )
+    return "，".join(
+        f"{int(start_hour)}:{start_minute}-{int(end_hour)}:{end_minute}"
+        for start_hour, start_minute, end_hour, end_minute in intervals
+    )
+
+
+def expected_sampling_time(overall_rows: List[Dict[str, str]]) -> str:
+    """Use the common work window when all detected positions share one shift."""
+    detected_rows = [
+        row for row in overall_rows if split_projects(row.get("project_raw", ""))
+    ]
+    candidate_rows = detected_rows or overall_rows
+    windows = dedupe(
+        normalize_work_time_window(row.get("work_time", ""))
+        for row in candidate_rows
+    )
+    return windows[0] if len(windows) == 1 else ""
+
+
+def parsed_duration_hours(value: str) -> float | None:
+    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:h|小时)", value or "", re.IGNORECASE)
+    return float(match.group(1)) if match else None
+
+
+def inferred_job_context(
+    overall_index: int,
+    overall_row: Dict[str, str],
+    detail_rows: List[Dict[str, str]],
+    overall_rows: List[Dict[str, str]],
+) -> Dict[str, str]:
+    """Infer mobile work only when detailed locations cover the full workday."""
+    source_job_type = overall_row.get("job_type", "")
+    matched_details = [
+        detail
+        for detail in detail_rows
+        if match_overall_row(detail, overall_rows) is overall_row
+    ]
+    duration_by_target: Dict[str, float] = {}
+    for detail in matched_details:
+        target = sampling_target(detail.get("target", ""))
+        duration = parsed_duration_hours(detail.get("duration", ""))
+        if target and duration is not None:
+            duration_by_target[target] = max(duration_by_target.get(target, 0), duration)
+
+    effective_job_type = source_job_type
+    inference_reason = ""
+    overall_hours = parsed_duration_hours(overall_representative_time(overall_row))
+    detailed_hours = sum(duration_by_target.values())
+    if (
+        source_job_type == "固定作业"
+        and len(duration_by_target) >= 2
+        and overall_hours is not None
+        and abs(detailed_hours - overall_hours) <= 0.25
+    ):
+        effective_job_type = "流动作业"
+        inference_reason = (
+            f"详细接触记录包含{len(duration_by_target)}个工位，"
+            f"工位时长合计{detailed_hours:g}h，与每日接触时间{overall_hours:g}h一致"
+        )
+    return {
+        "job_group_id": f"overall:{overall_index}",
+        "source_job_type": source_job_type,
+        "job_type": effective_job_type,
+        "job_type_inference_reason": inference_reason,
+    }
+
+
 def sampling_target(value: str) -> str:
     """Keep the sampling object/location and drop the repeated operation wording."""
     target = normalize_text(value)
@@ -396,6 +628,53 @@ def sampling_targets(value: str) -> List[str]:
     return dedupe(target for target in targets if target)
 
 
+def workstation_context(
+    workplace: str,
+    position: str,
+    target: str,
+    equipment_rows: List[Dict[str, str]],
+) -> tuple[str, str]:
+    """Infer the number of equivalent fixed workstations from running equipment."""
+    matches = [
+        equipment
+        for equipment in equipment_rows
+        if equipment.get("position", "") == position
+        and (
+            not workplace
+            or not equipment.get("workplace", "")
+            or equipment.get("workplace", "") in workplace
+            or workplace in equipment.get("workplace", "")
+        )
+    ]
+    target_core = re.sub(r"(?:工作)?工位|操作|作业", "", sampling_target(target))
+
+    def matches_target(equipment: Dict[str, str]) -> bool:
+        equipment_core = re.sub(
+            r"(?:生产线|交流机|压合机|机|台|槽|炉|枪|床|箱)$",
+            "",
+            equipment.get("name", ""),
+        )
+        return bool(
+            equipment_core
+            and target_core
+            and (equipment_core in target_core or target_core in equipment_core)
+        )
+
+    target_matches = [equipment for equipment in matches if matches_target(equipment)]
+    countable_matches = target_matches or (matches if len(matches) == 1 else [])
+    running = sum(
+        int(float(equipment.get("running_count", "0")))
+        for equipment in countable_matches
+        if re.fullmatch(r"\d+(?:\.\d+)?", equipment.get("running_count", ""))
+    )
+    if running:
+        names = "、".join(equipment.get("name", "") for equipment in countable_matches)
+        return str(running), f"设备表运行数：{names}共{running}台"
+    if sampling_target(target):
+        return "1", "岗位接触表列出1个明确工位"
+    return "", ""
+
+
 def workplace_and_target(workplace: str, target: str) -> tuple[str, str]:
     """Assign a mobile-work target to its specific workplace when stated."""
     normalized_target = sampling_target(target)
@@ -409,9 +688,18 @@ def workplace_and_target(workplace: str, target: str) -> tuple[str, str]:
     return matched_workplace, normalized_target[len(matched_workplace) :].strip()
 
 
-def build_table3(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
+def build_table3(
+    overall_rows: List[Dict[str, str]],
+    detail_rows: List[Dict[str, str]],
+    equipment_rows: List[Dict[str, str]] | None = None,
+) -> List[Dict[str, str]]:
     rows: List[Dict[str, str]] = []
+    equipment_rows = equipment_rows or []
     matched_overall_rows: set[int] = set()
+    job_contexts = {
+        index: inferred_job_context(index, overall_row, detail_rows, overall_rows)
+        for index, overall_row in enumerate(overall_rows)
+    }
     if detail_rows:
         for detail_row in detail_rows:
             projects = split_projects(detail_row.get("project_raw", ""))
@@ -423,20 +711,50 @@ def build_table3(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str,
                 # For unstable exposure, the detail table specifies the actual
                 # factor and representative time at each individual location.
                 matched_overall_rows.add(overall_index)
+                job_context = job_contexts[overall_index]
+            else:
+                source_job_type = detail_row.get("job_type", "")
+                job_context = {
+                    "job_group_id": "detail:{workplace}:{position}:{worker}".format(
+                        workplace=detail_row.get("workplace", ""),
+                        position=detail_row.get("position", ""),
+                        worker=detail_row.get("worker_name", ""),
+                    ),
+                    "source_job_type": source_job_type,
+                    "job_type": source_job_type,
+                    "job_type_inference_reason": "",
+                }
             people_per_shift = overall_row.get("people_per_shift", "")
-            overall_job_type = overall_row.get("job_type", "")
-            exposure_type = overall_row.get("exposure_type", "")
+            exposure_type = (
+                PARSING_RULES.get("detail_preferred_exposure_type", "")
+                or overall_row.get("exposure_type", "")
+            )
+            job_workplace = overall_row.get("workplace", "") or detail_row.get("workplace", "")
+            job_time = overall_representative_time(overall_row) if overall_row else ""
             detail_workplace, target = workplace_and_target(
                 detail_row.get("workplace", "") or overall_row.get("workplace", ""),
                 detail_row.get("target", ""),
             )
+            workstation_count, workstation_count_source = workstation_context(
+                detail_workplace,
+                detail_row.get("position", "") or overall_row.get("position", ""),
+                target,
+                equipment_rows,
+            )
             for project in projects:
                 rows.append(
                     make_table3_row(
+                        job_group_id=job_context["job_group_id"],
+                        job_workplace=job_workplace,
+                        job_representative_time=job_time,
+                        source_job_type=job_context["source_job_type"],
+                        job_type_inference_reason=job_context["job_type_inference_reason"],
                         workplace=detail_workplace,
                         position=detail_row.get("position", "") or overall_row.get("position", ""),
                         people_per_shift=people_per_shift,
-                        job_type=overall_job_type or detail_row.get("job_type", ""),
+                        workstation_count=workstation_count,
+                        workstation_count_source=workstation_count_source,
+                        job_type=job_context["job_type"],
                         target=target,
                         project=project,
                         exposure_type=exposure_type,
@@ -456,17 +774,30 @@ def build_table3(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str,
             target_workplace, target_location = workplace_and_target(
                 overall_row.get("workplace", ""), target
             )
+            workstation_count, workstation_count_source = workstation_context(
+                target_workplace,
+                overall_row.get("position", ""),
+                target_location,
+                equipment_rows,
+            )
             for project in projects:
                 rows.append(
                     make_table3_row(
+                        job_group_id=job_contexts[index]["job_group_id"],
+                        job_workplace=overall_row.get("workplace", ""),
+                        job_representative_time=overall_representative_time(overall_row),
+                        source_job_type=job_contexts[index]["source_job_type"],
+                        job_type_inference_reason=job_contexts[index]["job_type_inference_reason"],
                         workplace=target_workplace,
                         position=overall_row.get("position", ""),
                         people_per_shift=overall_row.get("people_per_shift", ""),
-                        job_type=overall_row.get("job_type", ""),
+                        workstation_count=workstation_count,
+                        workstation_count_source=workstation_count_source,
+                        job_type=job_contexts[index]["job_type"],
                         target=target_location,
                         project=project,
                         exposure_type=overall_row.get("exposure_type", ""),
-                        representative_time=work_duration(overall_row.get("work_time", "")),
+                        representative_time=overall_representative_time(overall_row),
                     )
                 )
     return rows
@@ -475,10 +806,15 @@ def build_table3(overall_rows: List[Dict[str, str]], detail_rows: List[Dict[str,
 def build_survey_tables(
     overall_rows: List[List[str]],
     detail_rows: List[List[str]],
+    equipment_rows: List[Dict[str, str]],
+    supporting_tables: Dict[str, List[Dict[str, str]]],
 ) -> Dict[str, List[Any]]:
     survey_tables: Dict[str, List[Any]] = {key: [] for key in SURVEY_TABLE_KEYS}
     survey_tables["overall_exposure"] = overall_rows
     survey_tables["detail_exposure"] = detail_rows
+    survey_tables["equipment"] = equipment_rows
+    for key, rows in supporting_tables.items():
+        survey_tables[key] = rows
     return survey_tables
 
 
@@ -501,10 +837,18 @@ def build_payload(pdf_path: Path, config_path: Path) -> Dict[str, Any]:
     header = extract_header(full_text, raw_tables)
     overall_raw_rows, detail_raw_rows = parse_exposure_rows(raw_tables)
     overall_rows = parse_overall_rows(overall_raw_rows)
+    header["expected_sampling_time"] = expected_sampling_time(overall_rows)
     detail_rows = parse_detail_rows(detail_raw_rows)
+    equipment_rows = parse_equipment_rows(raw_tables)
+    supporting_tables = parse_supporting_survey_tables(raw_tables)
     projects = build_projects(overall_rows, detail_rows)
-    table3 = build_table3(overall_rows, detail_rows)
-    survey_tables = build_survey_tables(overall_raw_rows, detail_raw_rows)
+    table3 = build_table3(overall_rows, detail_rows, equipment_rows)
+    survey_tables = build_survey_tables(
+        overall_raw_rows,
+        detail_raw_rows,
+        equipment_rows,
+        supporting_tables,
+    )
     missing_fields = build_missing_fields(header, overall_rows, projects)
     return {
         "header": header,

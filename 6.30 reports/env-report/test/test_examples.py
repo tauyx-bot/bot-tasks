@@ -118,6 +118,9 @@ def main() -> int:
     args.results_dir.mkdir(parents=True, exist_ok=True)
 
     for pdf_path in sorted(args.examples_dir.glob("*.pdf")):
+        # Component-analysis reports have their own parser and regression test.
+        if "组分报告" in pdf_path.stem:
+            continue
         expected_json = args.expected_dir / f"{pdf_path.stem}.expected.json"
         result_json = args.results_dir / f"{pdf_path.stem}.result.json"
         run_example(script, pdf_path, result_json, args.parser_config)

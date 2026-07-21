@@ -1,0 +1,33 @@
+{
+  "samples": [
+    {
+      "sample_name": "蓝光胶水",
+      "sample_no": "2025H5-01",
+      "workplace": "生产车间",
+      "position": "成型工",
+      "target": "成型工位",
+      "components": [
+        {
+          "name": "乙酸甲酯",
+          "cas_no": "79-20-9",
+          "percentage": "5.97"
+        },
+        {
+          "name": "正丁醛",
+          "cas_no": "123-72-8",
+          "percentage": "24.78"
+        },
+        {
+          "name": "甲苯",
+          "cas_no": "108-88-3",
+          "percentage": "10.99"
+        },
+        {
+          "name": "其他烃类化合物",
+          "cas_no": "—",
+          "percentage": "40.76"
+        }
+      ]
+    }
+  ]
+}
