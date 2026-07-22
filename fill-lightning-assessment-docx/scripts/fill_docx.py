@@ -24,7 +24,8 @@ if not (PROJECT_SCRIPTS / "extract_attachment1.py").is_file():
 sys.path.insert(0, str(PROJECT_SCRIPTS))
 
 from extract_attachment1 import calculate_assessment, extract_a4_review, extract_attachment  # noqa: E402
-from generate_from_json import NS, all_tables, assessment_scores, qn, set_cell, set_fill_fonts, text, value_text  # noqa: E402
+from generate_from_json import NS, all_tables, assessment_scores, qn, set_cell, set_fill_fonts, set_paragraph, text, value_text  # noqa: E402
+from report_sections import extract_sections, fill_sections, report_table_kind  # noqa: E402
 
 
 DOCUMENT_XML = "word/document.xml"
@@ -78,7 +79,12 @@ def mark_score(row: ET.Element, score: object, option_columns: range) -> int:
     cells = row.findall("w:tc", NS)
     if score is None:
         return 0
-    selected = int(score)
+    try:
+        selected = int(score)
+    except (TypeError, ValueError):
+        # An unresolved source selection is written as “待确认” in the result
+        # cell.  Clear all option checks instead of guessing a numeric score.
+        selected = -1
     edits = 0
     for index in option_columns:
         if index >= len(cells):
@@ -282,6 +288,21 @@ def fill_formula_paragraphs(root: ET.Element, assessment: dict[str, object]) -> 
             recognized.add(key)
             if text(paragraph) != values[key]:
                 runs = paragraph.findall("w:r", NS)
+                visible = text(paragraph)
+                already_filled = (
+                    key in {"A.1", "A.2", "A.6"} and "？" not in visible and "?" not in visible
+                ) or (
+                    key == "A.5" and re.search(r"\)\s*=\s*[^…\s]", visible) is not None
+                ) or (
+                    key == "R" and not canonical_formula_text(visible).endswith("=")
+                )
+                if already_filled:
+                    # Some source reports contain stale completed formula
+                    # values instead of question-mark placeholders.  Replace
+                    # that target paragraph atomically so reruns can correct it.
+                    set_paragraph(paragraph, values[key])
+                    edits += 1
+                    continue
                 if key == "A.1":
                     result_run = next(run for run in runs if "？" in text(run) or "?" in text(run))
                     set_run_text(result_run, re.sub(r"[？?]", value_text(l), text(result_run)), filled=True)
@@ -341,10 +362,11 @@ def verify_package(source_path: Path, output_path: Path) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="读取附件1和A.4，仅填写附件2其他评估表")
+    parser = argparse.ArgumentParser(description="读取附件1和A.4并填写附件2；可从完整assessment JSON填写报告主观分析")
     parser.add_argument("input", type=Path, help="输入 DOCX")
     parser.add_argument("--output", type=Path, help="输出 DOCX；默认添加 .filled 后缀")
     parser.add_argument("--report", type=Path, help="可选的 assessment JSON 审计文件")
+    parser.add_argument("--assessment-json", type=Path, help="包含报告章节AI生成字段的完整assessment JSON")
     parser.add_argument("--force", action="store_true", help="覆盖已存在的输出文件（不能覆盖输入）")
     return parser.parse_args()
 
@@ -368,13 +390,35 @@ def main() -> int:
         a4_review = extract_a4_review(source_path)
         if a4_review.get("人工复核") is not True:
             raise ValueError("未找到表 A.4 雷电灾害事故发生可能性直接赋值“3”的情况列表")
-        assessment = calculate_assessment(fields, source_path.stem, a4_review)
+        calculated_assessment = calculate_assessment(fields, source_path.stem, a4_review)
+        assessment = dict(calculated_assessment)
+        assessment["报告章节"] = extract_sections(source_path, fields)
         with zipfile.ZipFile(source_path) as source:
             root = ET.fromstring(source.read(DOCUMENT_XML))
+        sections_data: dict[str, object] | None = None
+        reviewed_assessment: dict[str, object] | None = None
+        if args.assessment_json:
+            try:
+                loaded = json.loads(args.assessment_json.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise ValueError(f"无法读取assessment JSON：{error}") from error
+            if not isinstance(loaded, dict):
+                raise ValueError("assessment JSON顶层必须是对象")
+            for key, expected in calculated_assessment.items():
+                if loaded.get(key) != expected:
+                    raise ValueError(f"assessment JSON中的客观评估字段“{key}”与DOCX重新计算结果不一致")
+            raw_sections = loaded.get("报告章节")
+            if not isinstance(raw_sections, dict):
+                raise ValueError("assessment JSON缺少“报告章节”对象")
+            if raw_sections.get("source_document") != source_path.name:
+                raise ValueError("assessment JSON的报告章节来源文件与当前DOCX不一致")
+            sections_data = raw_sections
+            reviewed_assessment = loaded
         original_non_targets = [
             ET.tostring(table, encoding="utf-8")
             for table in all_tables(root)
             if target_section(text(table)) is None
+            and not (sections_data is not None and report_table_kind(table) is not None)
         ]
         edits, recognized = fill_target_tables(root, assessment)
         required = {"A.1", "A.2", "A.3", "A.5", "A.6", "A.7", "A.8"}
@@ -385,10 +429,17 @@ def main() -> int:
         required_formulas = {"A.1", "A.2", "A.5", "A.6", "R"}
         if missing := sorted(required_formulas - recognized_formulas):
             raise ValueError(f"未识别附件2计算公式：{', '.join(missing)}")
+        if sections_data is not None:
+            section_edits, recognized_sections = fill_sections(root, sections_data)
+            edits += section_edits
+            required_sections = {"第四章：企业概况与现场勘查情况", "第五章：雷电灾害风险识别与评估", "附件6：防雷安全重点单位“重点部位”风险分类分级管控清单"}
+            if missing := sorted(required_sections - recognized_sections):
+                raise ValueError(f"未识别报告章节目标：{', '.join(missing)}")
         current_non_targets = [
             ET.tostring(table, encoding="utf-8")
             for table in all_tables(root)
             if target_section(text(table)) is None
+            and not (sections_data is not None and report_table_kind(table) is not None)
         ]
         if original_non_targets != current_non_targets:
             raise ValueError("检测到附件2目标表之外的表格发生变化")
@@ -411,13 +462,14 @@ def main() -> int:
         temporary_output = None
         if args.report:
             args.report.parent.mkdir(parents=True, exist_ok=True)
-            args.report.write_text(json.dumps(assessment, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            report_data = reviewed_assessment if reviewed_assessment is not None else assessment
+            args.report.write_text(json.dumps(report_data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     except (OSError, ValueError, ET.ParseError, zipfile.BadZipFile, KeyError) as error:
         if temporary_output is not None and temporary_output.exists():
             temporary_output.unlink()
         raise SystemExit(f"处理失败：{error}") from error
 
-    warnings = assessment.get("validation_errors", [])
+    warnings = calculated_assessment.get("validation_errors", [])
     print(f"已生成：{output_path}")
     print(f"填写单元格：{edits}")
     print(f"validation_errors：{json.dumps(warnings, ensure_ascii=False)}")

@@ -1,52 +1,54 @@
 ---
 name: fill-lightning-assessment-docx
-description: 处理防雷重点单位风险评估 DOCX，读取已有信息并填写附件2评估表，同时保持文档格式和其他内容不变。适用于用户要求完成防雷风险评估 Word 文档的场景。
+description: Parse and complete lightning-protection risk-assessment DOCX files. Use when Attachment 2 must be scored or when the model must complete Chapter 4, Chapter 5, and Attachment 6 from manually entered assessment values.
 ---
 
-# 填写防雷风险评估 DOCX
+# Fill Lightning Assessment DOCX
 
-将用户上传的 DOCX 视为只读文件 A，复制生成文件 B，只在文件 B 中填写评估结果。使用内置脚本完成提取、计算和 OOXML 定点修改。
+Turn one source assessment DOCX into a completed copy. Never overwrite the source document.
 
-## 操作流程
+For Attachment 2 only, go directly to Generate. When report analysis is requested, start with Parse.
 
-1. 确认用户提供了一个 `.docx` 文件，将其作为文件 A。
-2. 为文件 B 选择不同于文件 A 的路径。默认命名为 `<原文件名>.filled.docx`，不得覆盖文件 A。
-3. 执行：
+## 1. Parse
 
-   ```bash
-   python3 scripts/fill_docx.py 文件A.docx --output 文件B.docx
-   ```
+```bash
+python3 scripts/extract_attachment1.py \
+  --input-dir /path/to/docx-directory \
+  --output-dir /path/to/json-directory
+```
 
-4. 如需保留计算审计数据，增加 `--report 结果.assessment.json`。
-5. 检查脚本输出的 `validation_errors`。存在警告时必须告知用户，不得猜测缺失选项或把 `待确认` 静默替换为分数。
-6. 在最终回复中附上或链接文件 B，并简要说明警告。不得只返回 JSON 或文字结果。
+This produces the existing `*.assessment.json`. When report analysis is needed, the same JSON also contains `报告章节`; do not create a separate sections JSON.
 
-## DOCX 读取与解析
+## 2. Review
 
-内置的 `scripts/extract_attachment1.py` 负责读取文件 A，过程如下：
+To complete Chapter 4, Chapter 5, and Attachment 6, read `references/report-review-guide.md` completely and fill only `报告章节/AI生成` in the assessment JSON.
 
-1. 将 DOCX 作为 ZIP 格式的 OOXML 包打开，只读取 `word/document.xml`。
-2. 遍历正文顶层表格，合并各单元格的可见文字。
-3. 查找同时包含“单位名称（盖章）/单位名称”和“经纬度”的表格，将其识别为“附件1：企业基础信息收集表”。
-4. 按“字段标签—字段值”单元格对提取附件1；区域建筑物信息拆分为面积、建筑高度、等效高度和相对高度。
-5. 读取 `w:sym` 复选框：Wingdings 使用 `00FE`/`00A8`，Wingdings 2 使用 `0052`/`00A3` 表示已勾选/未勾选。
-6. 查找同时包含“防雷安全管理”和“雷电灾害历史”的表格，将其识别为 A.4 并保留人工复核内容；参照已完成表格，A.1 的 L 按加权公式计算。
-7. 将附件1字段交给评分逻辑，再复制文件 A，写入 A.1—A.7 分值、命中选项勾选和表后 L/P/S/M/R 计算式。
+Treat the parsed assessment units and their L, S, and R values as manual facts. Do not modify or recalculate them. Do not invent missing site conditions or inspection results.
 
-## 数据处理规则
+## 3. Generate
 
-- 从文件 A 读取“附件1：企业基础信息收集表”。
-- 从文件 A 读取并保留 A.4 人工复核内容，不修改 A.4。
-- 计算并填写附件2中的 A.1—A.3、A.5—A.8，包括分值、选项勾选与 L/P/S/M/R 计算式。
-- 对已有但错误的目标分值和勾选进行校正，保留目标区域外的已有内容。
-- 程序新写入文字的英文和数字使用仿宋，汉字使用微软雅黑。
-- 不修改附件1、表 A.4、封面、其他附件和无关表格。
-- 除 `word/document.xml` 外，文件 B 中所有 DOCX 包成员必须与文件 A 逐字节一致；在 `document.xml` 中只允许修改已识别的附件2目标表和计算式。
-- 不得调用项目的 `populate_docx()`，因为它还会填写附件1和封面字段。
+Attachment 2 only:
 
-## 异常处理
+```bash
+python3 scripts/fill_docx.py source.docx \
+  --output source.filled.docx \
+  --report source.assessment.json
+```
 
-- DOCX 损坏、缺少附件1、缺少表 A.4，或无法识别附件2目标表时，停止处理且不生成文件 B。
-- 如果目标单元格均已填写，生成与文件 A 逐字节一致的文件 B，并说明无需回填。
-- 输出文件已经存在时默认停止。只有用户明确允许覆盖文件 B 时才使用 `--force`，但任何情况下都不能覆盖文件 A。
-- 保留文件 A，报告明确错误，不进行宽泛的文档修复。
+Attachment 2 plus report analysis:
+
+```bash
+python3 scripts/fill_docx.py source.docx \
+  --assessment-json source.assessment.json \
+  --output source.filled.docx
+```
+
+The command validates the assessment JSON against the source DOCX before writing anything. Fix the reported field when validation fails; never bypass the check.
+
+## Completion rules
+
+- Confirm that the output DOCX exists and is non-empty.
+- Report every `validation_errors` item; never silently replace `待确认` with a score.
+- Preserve the source order of assessment units.
+- Link the completed DOCX in the final response.
+- Never overwrite the source DOCX or broaden edits beyond the requested report areas.

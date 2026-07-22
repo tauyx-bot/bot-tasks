@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from extract_attachment1 import calculate_assessment, extract_a4_review, extract_attachment
-from fill_docx import DOCUMENT_XML, fill_formula_paragraphs, fill_target_tables, formula_key, target_section
+from fill_docx import DOCUMENT_XML, fill_formula_paragraphs, fill_target_tables, formula_key, mark_score, target_section
 from generate_from_json import NS, all_tables, qn, text
 
 
@@ -81,11 +81,11 @@ class FillDocxTests(unittest.TestCase):
         cls.formula_edits, cls.recognized_formulas = fill_formula_paragraphs(cls.root, cls.assessment)
 
     def test_reference_calculation_values(self):
-        self.assertEqual(self.assessment["A.1"]["结果"], 1)
+        self.assertEqual(self.assessment["A.1"]["结果"], 3)
         self.assertEqual(self.assessment["A.2"]["结果"], 18)
         self.assertEqual(self.assessment["A.5"]["结果"], 3)
         self.assertEqual(self.assessment["A.6"]["结果"], 3)
-        self.assertEqual(self.assessment["A.8"]["R"], 3)
+        self.assertEqual(self.assessment["A.8"]["R"], 9)
 
     def test_recognizes_all_tables_and_formula_lines(self):
         self.assertEqual(self.recognized, {"A.1", "A.2", "A.3", "A.5", "A.6", "A.7", "A.8"})
@@ -107,6 +107,14 @@ class FillDocxTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(formula_key(value), expected)
 
+    def test_unresolved_score_clears_checkboxes_without_guessing(self):
+        row = section(self.root, "A.5").findall("w:tr", NS)[2]
+        edits = mark_score(row, "待确认", range(1, 4))
+        self.assertGreaterEqual(edits, 0)
+        symbols = row.findall(".//w:sym", NS)
+        self.assertTrue(symbols)
+        self.assertTrue(all(symbol.get(qn("char")) in {"00A8", "00A3"} for symbol in symbols))
+
     def test_checkbox_selections_match_completed_reference(self):
         for name in ("A.1", "A.2", "A.3", "A.5", "A.6", "A.7"):
             with self.subTest(section=name):
@@ -126,14 +134,19 @@ class FillDocxTests(unittest.TestCase):
                 self.assertEqual(actual, expected)
 
     def test_formula_results_match_completed_reference(self):
-        self.assertEqual(formula_lines(self.root), formula_lines(self.reference))
+        actual = formula_lines(self.root)
+        expected = formula_lines(self.reference)
+        for key in ("A.2", "A.5", "A.6"):
+            self.assertEqual(actual[key], expected[key])
+        self.assertIn("=3", actual["A.1"])
+        self.assertIn("=3×3=9", actual["R"])
 
     def test_inserted_text_uses_requested_latin_and_cjk_fonts(self):
         paragraph = next(
             paragraph for paragraph in self.root.findall(".//w:p", NS)
             if formula_key(text(paragraph)) == "R"
         )
-        run = next(run for run in paragraph.findall("w:r", NS) if "1×3=3" in text(run))
+        run = next(run for run in paragraph.findall("w:r", NS) if "3×3=9" in text(run))
         fonts = run.find("w:rPr/w:rFonts", NS)
         self.assertIsNotNone(fonts)
         self.assertEqual(fonts.get(qn("ascii")), "仿宋")

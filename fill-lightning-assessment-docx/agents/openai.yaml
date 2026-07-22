@@ -1,4 +1,4 @@
 interface:
   display_name: "填写防雷风险评估 DOCX"
-  short_description: "读取附件1与表A.4并安全填写附件2中的风险评估表格内容"
-  default_prompt: "使用 $fill-lightning-assessment-docx 读取这个 DOCX，并在保持格式和其他内容不变的前提下填写附件2评估表。"
+  short_description: "填写附件2，并可从同一assessment JSON生成报告分析章节"
+  default_prompt: "使用 $fill-lightning-assessment-docx 读取这个 DOCX，填写附件2；如需完善第四章、第五章和附件6，先把人工评估值及AI生成字段加入同一assessment JSON，再安全回填。"
