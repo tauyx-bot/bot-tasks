@@ -1,0 +1,105 @@
+{
+  "header": {
+    "detection_task_no": "粤鑫职定期2026173号",
+    "unit_name": "佛山市三水区悦安能源有限公司",
+    "contact": "陈小姐13924924928",
+    "address": "佛山市三水区南山镇六和村120号之三",
+    "detection_type": "定期检测",
+    "expected_sampling_time": "8:00-16:00，16:00-0:00，0:00-8:00"
+  },
+  "survey_tables": {
+    "basic_info": [],
+    "materials": [
+      {
+        "name": "92#汽油",
+        "annual_use": "1204T",
+        "physical_state": "液态",
+        "components": "正己烷3.56%、苯0.33%、甲苯3.49%",
+        "workplace": "加油区、卸油区",
+        "position": "加油工"
+      }
+    ],
+    "products": [
+      {
+        "name": "92#汽油",
+        "annual_output": "1204T",
+        "physical_state": "液态",
+        "packaging": "/"
+      }
+    ],
+    "equipment": [
+      {
+        "name": "加油机",
+        "model": "/",
+        "total_count": "2",
+        "running_count": "2",
+        "workplace": "加油区",
+        "position": "加油工",
+        "layout": "机群式布局"
+      }
+    ],
+    "protection_facilities": [
+      {
+        "workplace": "加油区",
+        "target": "加油工位",
+        "name": "油气回收装置",
+        "type": "防毒",
+        "total_count": "1",
+        "running_count": "1",
+        "notes": ""
+      }
+    ],
+    "ppe": [],
+    "overall_exposure": [
+      [
+        "加油区、卸油区、营业厅",
+        "加油工",
+        "三班制",
+        "5",
+        "2",
+        "8:00-16:00，16:00-0:00，0:00-8:00",
+        "流动作业",
+        "加油工位加油、卸油工位卸油、营业厅收银",
+        "苯、甲苯、溶剂汽油、高温",
+        "原料、环境",
+        "②",
+        "8.00",
+        "6.00",
+        "48.00",
+        "Ⅰ级",
+        "刘燕霞"
+      ]
+    ],
+    "detail_exposure": [
+      [
+        "刘燕霞",
+        "加油区、卸油区、营业厅",
+        "加油工",
+        "加油时",
+        "加油工位",
+        "加油",
+        "苯、甲苯、溶剂汽油",
+        "6h",
+        "不定时、间断加油"
+      ],
+      [
+        "",
+        "收银时",
+        "营业厅",
+        "收银",
+        "/",
+        "1.5h",
+        "不定时、间断收银"
+      ],
+      [
+        "卸油时",
+        "卸油工位",
+        "卸油",
+        "苯、甲苯、溶剂汽油、高温",
+        "0.5h",
+        "不定时、间断卸油"
+      ]
+    ],
+    "attachments": []
+  }
+}

@@ -14,7 +14,7 @@ from .models import (
 
 REPORT_RULES: Final[ReportRules] = ReportRules(
     parsing=ParsingRules(
-        ignored_projects=('', '/', '无'),
+        ignored_projects=('', '/', '无', '激光辐射'),
         detail_stop_markers=('七、其他附件', '工艺名称'),
         workbench_suffix='工位',
         detail_preferred_exposure_type='②',

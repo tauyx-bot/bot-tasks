@@ -656,6 +656,87 @@ class MobileJobRulesTest(unittest.TestCase):
                 )
                 self.assertEqual(expected, collector["device"])
 
+    def test_compound_suffix_falls_back_to_base_hazard(self) -> None:
+        manganese = self.rule_index["锰"]
+        for project in ("锰及其化合物", "锰及其无机化合物"):
+            self.assertIs(
+                manganese,
+                generate_report.lookup_entry(self.rule_index, project),
+            )
+            collector = generate_report.collector_for_project(
+                project,
+                "定点",
+                self.collector_index,
+                self.rule_index,
+                self.rules,
+            )
+            self.assertTrue(collector["collector"])
+            self.assertTrue(collector["device"])
+            self.assertTrue(
+                generate_report.oel_limit_types(project, self.oel_index)
+            )
+
+    def test_laser_radiation_is_ignored_in_parsed_and_generated_rows(self) -> None:
+        self.assertEqual(
+            ["噪声", "锰及其化合物"],
+            parse_pdf.split_projects("噪声、激光辐射、锰及其化合物"),
+        )
+        table2, missing = generate_report.build_table2(
+            ["激光辐射", "锰及其化合物"],
+            [],
+            self.rule_index,
+            self.rules,
+        )
+        self.assertNotIn("激光辐射", "、".join(row["检测项目"] for row in table2))
+        self.assertFalse(any("激光辐射" in item for item in missing))
+        table3, _missing = generate_report.build_table3(
+            [
+                {
+                    "workplace": "生产车间",
+                    "position": "操作工",
+                    "people_per_shift": "1",
+                    "job_type": "固定",
+                    "target": "操作工位",
+                    "project": "激光辐射",
+                    "exposure_type": "①",
+                    "representative_time": "8h",
+                }
+            ],
+            self.collector_index,
+            self.rule_index,
+            "定期检测",
+            self.rules,
+            self.oel_index,
+        )
+        self.assertEqual([], table3)
+        survey_tables = parse_pdf.build_survey_tables(
+            [
+                [
+                    "生产车间",
+                    "操作工",
+                    "单班制",
+                    "1",
+                    "1",
+                    "8:00-12:00，13:30-17:30",
+                    "固定作业",
+                    "操作工位操作设备",
+                    "激光辐射、噪声",
+                    "设备",
+                    "①",
+                    "8.00",
+                    "6.00",
+                    "48.00",
+                    "张三",
+                ]
+            ],
+            [["张三", "生产车间", "操作工", "作业时", "操作工位", "操作", "激光辐射", "8h", ""]],
+            [],
+            {},
+        )
+        self.assertEqual("噪声", survey_tables["overall_exposure"][0][8])
+        self.assertEqual("/", survey_tables["detail_exposure"][0][6])
+        self.assertNotIn("激光辐射", str(survey_tables))
+
     def test_static_hazard_records_use_compact_slots_classes(self) -> None:
         hazard = HAZARDS["溶剂汽油"]
         self.assertIsInstance(hazard, HazardData)
@@ -827,6 +908,77 @@ class MobileJobRulesTest(unittest.TestCase):
         self.assertEqual("固定作业", context["source_job_type"])
         self.assertEqual("流动作业", context["job_type"])
         self.assertIn("工位时长合计8h", context["job_type_inference_reason"])
+
+    def test_review_gate_rejects_merged_cell_spillover(self) -> None:
+        payload = {
+            "header": {},
+            "survey_tables": {
+                key: [] for key in parse_pdf.SURVEY_TABLE_KEYS
+            },
+        }
+        payload["survey_tables"]["detail_exposure"] = [
+            ["上一行窜入文本", "卸油时", "卸油工位", "卸油", "苯", "0.5h", ""]
+        ]
+        errors, _warnings = parse_pdf.validate_reviewed_payload(payload)
+        self.assertTrue(any("合并单元格占位列" in error for error in errors))
+
+    def test_reviewed_source_rows_rebuild_stale_derived_data(self) -> None:
+        survey_tables = {key: [] for key in parse_pdf.SURVEY_TABLE_KEYS}
+        survey_tables["overall_exposure"] = [
+            [
+                "加油区、卸油区、营业厅",
+                "加油工",
+                "三班制",
+                "5",
+                "2",
+                "8:00-16:00，16:00-0:00，0:00-8:00",
+                "流动作业",
+                "加油工位加油、卸油工位卸油、营业厅收银",
+                "苯、溶剂汽油",
+                "原料、环境",
+                "②",
+                "8.00",
+                "6.00",
+                "48.00",
+                "刘燕霞",
+            ]
+        ]
+        survey_tables["detail_exposure"] = [
+            [
+                "刘燕霞",
+                "加油区、卸油区、营业厅",
+                "加油工",
+                "加油时",
+                "加油工位",
+                "加油",
+                "苯、溶剂汽油",
+                "6h",
+                "不定时、间断加油",
+            ],
+            ["", "卸油时", "卸油工位", "卸油", "苯、溶剂汽油", "0.5h", ""],
+        ]
+        payload = {
+            "header": {
+                "detection_task_no": "测试号",
+                "unit_name": "测试单位",
+                "contact": "测试联系人",
+                "address": "测试地址",
+                "detection_type": "定期检测",
+                "expected_sampling_time": "8:00-16:00，16:00-0:00，0:00-8:00",
+            },
+            "survey_tables": survey_tables,
+            "projects": ["旧项目"],
+            "table3": [{"project": "旧项目"}],
+        }
+        errors, _warnings = parse_pdf.validate_reviewed_payload(payload)
+        self.assertEqual([], errors)
+        rebuilt = parse_pdf.rebuild_reviewed_payload(payload)
+        self.assertEqual(["苯", "溶剂汽油"], rebuilt["projects"])
+        self.assertNotIn("旧项目", {row["project"] for row in rebuilt["table3"]})
+        self.assertEqual(
+            {"加油工位", "卸油工位"},
+            {row["target"] for row in rebuilt["table3"]},
+        )
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
-display_name: Env Report
-short_description: Fill a workplace sampling plan DOCX from a survey PDF while preserving template formatting.
-default_prompt: Fill the plan template from a survey PDF, use scripts/data_store/hazards.py for Table 2 rule matches, preserve DOCX formatting, and leave missing fields blank with a summary.
+interface:
+  display_name: "Env Report"
+  short_description: "Review survey data and generate occupational sampling plans"
+  default_prompt: "Use $env-report to parse and review this workplace survey PDF, validate normalized data, and generate the sampling-plan DOCX."

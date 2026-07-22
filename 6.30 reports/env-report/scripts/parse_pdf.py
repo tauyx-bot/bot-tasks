@@ -891,12 +891,48 @@ def build_survey_tables(
     supporting_tables: Dict[str, List[Dict[str, str]]],
 ) -> Dict[str, List[Any]]:
     survey_tables: Dict[str, List[Any]] = {key: [] for key in SURVEY_TABLE_KEYS}
-    survey_tables["overall_exposure"] = overall_rows
-    survey_tables["detail_exposure"] = detail_rows
+    survey_tables["overall_exposure"] = sanitize_exposure_project_rows(
+        overall_rows, detail=False
+    )
+    survey_tables["detail_exposure"] = sanitize_exposure_project_rows(
+        detail_rows, detail=True
+    )
     survey_tables["equipment"] = equipment_rows
     for key, rows in supporting_tables.items():
         survey_tables[key] = rows
     return survey_tables
+
+
+def sanitized_project_text(value: str) -> str:
+    """Remove ignored report projects while retaining the other source items."""
+    normalized = normalize_text(value)
+    projects = [normalize_text(part) for part in SPLIT_PATTERN.split(normalized)]
+    retained = [project for project in projects if project != "激光辐射"]
+    if len(retained) == len(projects):
+        return normalized
+    return "、".join(retained) if retained else "/"
+
+
+def sanitize_exposure_project_rows(
+    rows: List[List[str]], *, detail: bool
+) -> List[List[str]]:
+    """Copy exposure rows and remove ignored projects from their project cell."""
+    sanitized: List[List[str]] = []
+    for source_row in rows:
+        row = source_row[:]
+        project_index: int | None = None
+        if not detail and len(row) >= 9:
+            project_index = 8
+        elif detail and len(row) >= 9:
+            project_index = 6
+        elif detail and len(row) == 7:
+            project_index = 4
+        elif detail and len(row) in {5, 6}:
+            project_index = 3
+        if project_index is not None:
+            row[project_index] = sanitized_project_text(row[project_index])
+        sanitized.append(row)
+    return sanitized
 
 
 def build_missing_fields(header: Dict[str, str], overall_rows: List[Dict[str, str]], projects: List[str]) -> List[str]:
@@ -909,6 +945,169 @@ def build_missing_fields(header: Dict[str, str], overall_rows: List[Dict[str, st
     if not projects:
         missing.append("table2.projects")
     return missing
+
+
+REVIEW_WORKFLOW_VERSION = 1
+REVIEW_NOISE_MARKERS = ("七、其他附件", "搜索复制翻译")
+REVIEW_OBJECT_TABLE_FIELDS = {
+    "materials": (
+        "name",
+        "annual_use",
+        "physical_state",
+        "components",
+        "workplace",
+        "position",
+    ),
+    "products": ("name", "annual_output", "physical_state", "packaging"),
+    "equipment": (
+        "name",
+        "model",
+        "total_count",
+        "running_count",
+        "workplace",
+        "position",
+        "layout",
+    ),
+    "protection_facilities": (
+        "workplace",
+        "target",
+        "name",
+        "type",
+        "total_count",
+        "running_count",
+        "notes",
+    ),
+    "ppe": (
+        "classification",
+        "category",
+        "manufacturer",
+        "model",
+        "workplace",
+        "position",
+        "replacement_cycle",
+        "wearing_status",
+        "notes",
+    ),
+}
+
+
+def validate_reviewed_payload(payload: Dict[str, Any]) -> tuple[List[str], List[str]]:
+    """Validate the model-reviewed source rows before rebuilding derived data."""
+    errors: List[str] = []
+    warnings: List[str] = []
+    header = payload.get("header")
+    survey_tables = payload.get("survey_tables")
+    if not isinstance(header, dict):
+        errors.append("header 必须是对象")
+    else:
+        for key in HEADER_KEYS:
+            if key not in header:
+                errors.append(f"header.{key} 必须存在；未知值使用空字符串")
+            elif not isinstance(header[key], str):
+                errors.append(f"header.{key} 必须是字符串")
+    if not isinstance(survey_tables, dict):
+        return errors + ["survey_tables 必须是对象"], warnings
+
+    for table_name in SURVEY_TABLE_KEYS:
+        if table_name not in survey_tables:
+            errors.append(f"survey_tables.{table_name} 必须存在；无记录时使用空数组")
+
+    overall_rows = survey_tables.get("overall_exposure")
+    detail_rows = survey_tables.get("detail_exposure")
+    if not isinstance(overall_rows, list):
+        errors.append("survey_tables.overall_exposure 必须是数组")
+        overall_rows = []
+    if not isinstance(detail_rows, list):
+        errors.append("survey_tables.detail_exposure 必须是数组")
+        detail_rows = []
+
+    for index, row in enumerate(overall_rows):
+        path = f"survey_tables.overall_exposure[{index}]"
+        if not isinstance(row, list) or len(row) not in {15, 16}:
+            errors.append(f"{path} 必须严格保留15列或16列")
+            continue
+        if any(not isinstance(cell, str) for cell in row):
+            errors.append(f"{path} 的单元格必须全部是字符串")
+            continue
+        work_time = row[5]
+        if "：" in work_time or re.search(r"\d{2}:\d{2}\d{1,2}:\d{2}", work_time):
+            errors.append(f"{path}[5] 班次时间仍含全角冒号或缺少时段分隔符")
+        target = row[7]
+        if target.count("工位") > 1 and "、" not in target:
+            errors.append(f"{path}[7] 多个工位/动作必须用、分隔")
+        for marker in REVIEW_NOISE_MARKERS:
+            if marker in "".join(row):
+                errors.append(f"{path} 含PDF页脚或界面噪声：{marker}")
+        if any(delimiter in row[8] for delimiter in (",", "，")):
+            warnings.append(f"{path}[8] 危害因素宜统一用、分隔，并保留括号内文本")
+
+    allowed_detail_lengths = {5, 6, 7, 9}
+    for index, row in enumerate(detail_rows):
+        path = f"survey_tables.detail_exposure[{index}]"
+        if not isinstance(row, list) or len(row) not in allowed_detail_lengths:
+            errors.append(f"{path} 列数必须为5、6、7或9")
+            continue
+        if any(not isinstance(cell, str) for cell in row):
+            errors.append(f"{path} 的单元格必须全部是字符串")
+            continue
+        if len(row) == 7 and row[0].strip():
+            errors.append(f"{path}[0] 是合并单元格占位列，应清空窜入的上一行文本")
+        for marker in REVIEW_NOISE_MARKERS:
+            if marker in "".join(row):
+                errors.append(f"{path} 含PDF页脚或界面噪声：{marker}")
+
+    for table_name in SURVEY_TABLE_KEYS:
+        rows = survey_tables.get(table_name, [])
+        if not isinstance(rows, list):
+            errors.append(f"survey_tables.{table_name} 必须是数组")
+    for table_name, required_fields in REVIEW_OBJECT_TABLE_FIELDS.items():
+        rows = survey_tables.get(table_name, [])
+        if not isinstance(rows, list):
+            continue
+        for index, row in enumerate(rows):
+            path = f"survey_tables.{table_name}[{index}]"
+            if not isinstance(row, dict):
+                errors.append(f"{path} 必须是对象")
+                continue
+            for field in required_fields:
+                if field not in row:
+                    errors.append(f"{path}.{field} 必须存在；未知值使用空字符串")
+                elif not isinstance(row[field], str):
+                    errors.append(f"{path}.{field} 必须是字符串")
+    return dedupe(errors), dedupe(warnings)
+
+
+def rebuild_reviewed_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Recompute projects and sampling rows from model-reviewed source tables."""
+    survey_tables = payload["survey_tables"]
+    overall_raw_rows = sanitize_exposure_project_rows(
+        survey_tables.get("overall_exposure", []), detail=False
+    )
+    detail_raw_rows = sanitize_exposure_project_rows(
+        survey_tables.get("detail_exposure", []), detail=True
+    )
+    survey_tables = dict(survey_tables)
+    survey_tables["overall_exposure"] = overall_raw_rows
+    survey_tables["detail_exposure"] = detail_raw_rows
+    equipment_rows = survey_tables.get("equipment", [])
+    overall_rows = parse_overall_rows(overall_raw_rows)
+    detail_rows = parse_detail_rows(detail_raw_rows)
+    projects = build_projects(overall_rows, detail_rows)
+    table3 = build_table3(overall_rows, detail_rows, equipment_rows)
+    header = dict(payload.get("header", {}))
+    if not header.get("expected_sampling_time"):
+        header["expected_sampling_time"] = expected_sampling_time(overall_rows)
+    rebuilt = dict(payload)
+    rebuilt.update(
+        {
+            "header": header,
+            "survey_tables": survey_tables,
+            "projects": projects,
+            "table3": table3,
+            "missing_fields": dedupe(build_missing_fields(header, overall_rows, projects)),
+        }
+    )
+    return rebuilt
 
 
 def build_payload(pdf_path: Path) -> Dict[str, Any]:

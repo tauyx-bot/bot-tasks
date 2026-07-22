@@ -8,7 +8,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, TypeVar
 
 import fill_docx
 import parse_component_report
@@ -33,6 +33,42 @@ def normalize_lookup(value: str) -> str:
         elif depth == 0:
             outside.append(character)
     return "".join("".join(outside).split())
+
+
+COMPOUND_SUFFIXES = ("及其无机化合物", "及其化合物")
+LookupValue = TypeVar("LookupValue")
+
+
+def lookup_candidates(value: str) -> List[str]:
+    """Return exact and compound-suffix fallback keys in priority order."""
+    normalized = normalize_lookup(value)
+    candidates = [normalized]
+    for suffix in COMPOUND_SUFFIXES:
+        if normalized.endswith(suffix):
+            stem = normalized[: -len(suffix)]
+            candidates.extend(
+                [stem, f"{stem}及其无机化合物", f"{stem}及其化合物"]
+            )
+            break
+    return dedupe(candidates)
+
+
+def lookup_entry(
+    index: Dict[str, LookupValue], value: str, default: LookupValue | None = None
+) -> LookupValue | None:
+    """Look up a project exactly, then without a generic compound suffix."""
+    for candidate in lookup_candidates(value):
+        if candidate in index:
+            return index[candidate]
+    return default
+
+
+def is_ignored_project(project: str, report_rules: Dict[str, object]) -> bool:
+    ignored = {
+        normalize_lookup(str(value))
+        for value in report_rules["parsing"]["ignored_projects"]
+    }
+    return normalize_lookup(project) in ignored
 
 
 def configured_flow_rates(value: str) -> Dict[str, str]:
@@ -61,7 +97,7 @@ def flow_rate_for_project(
     fallback: str = "",
 ) -> str:
     """Choose flow from the project's rule and its sampling-time type."""
-    rule = rule_index.get(normalize_lookup(project), {})
+    rule = lookup_entry(rule_index, project, {})
     return flow_rate_for_rule(rule, sampling_mode, time_type, fallback)
 
 
@@ -79,7 +115,7 @@ def flow_rate_for_rule(
 
 
 def display_project_name(project: str, rule_index: Dict[str, Dict[str, str]]) -> str:
-    rule = rule_index.get(normalize_lookup(project), {})
+    rule = lookup_entry(rule_index, project, {})
     return rule.get("display_name", "") or project
 
 
@@ -115,7 +151,7 @@ def oel_limit_types(
     oel_index: Dict[str, Dict[str, object]] | None = None,
 ) -> set[str]:
     index = default_oel_index() if oel_index is None else oel_index
-    entry = index.get(normalize_lookup(project), {})
+    entry = lookup_entry(index, project, {})
     return set(entry.get("limit_types", set()))
 
 
@@ -190,14 +226,22 @@ def build_table2(
     rule_index: Dict[str, Dict[str, str]],
     report_rules: Dict[str, object],
 ) -> Tuple[List[Dict[str, str]], List[str]]:
-    source_projects = dedupe(projects)
+    source_projects = dedupe(
+        [project for project in projects if not is_ignored_project(project, report_rules)]
+    )
     if not source_projects:
-        source_projects = dedupe([row.get("project", "") for row in table3_rows])
+        source_projects = dedupe(
+            [
+                row.get("project", "")
+                for row in table3_rows
+                if not is_ignored_project(row.get("project", ""), report_rules)
+            ]
+        )
 
     rows: List[Dict[str, str]] = []
     missing: List[str] = []
     for project in source_projects:
-        matched_rule = rule_index.get(normalize_lookup(project))
+        matched_rule = lookup_entry(rule_index, project)
         if matched_rule:
             storage = matched_rule["storage"]
             rows.append(
@@ -264,7 +308,7 @@ def collector_for_project(
 ) -> Dict[str, object]:
     """Choose a collector by project, then choose its device by sampling mode."""
     sampling_rules = report_rules["sampling"]
-    rule = rule_index.get(normalize_lookup(project))
+    rule = lookup_entry(rule_index, project)
     if not rule or not rule.get("collector"):
         # Unknown projects are retained in the form for later manual completion.
         return {"collector": "", "device": "", "flow_rate": "", "supports_individual": False}
@@ -281,11 +325,7 @@ def collector_for_project(
     # their instruments are factor-specific (for example, noise). Prefer a
     # project-specific configuration when one exists, while retaining the
     # configured collector text in the generated form.
-    equipment = (
-        collector_index.get(project)
-        or collector_index.get(normalize_lookup(project))
-        or collector_index.get(collector)
-    )
+    equipment = lookup_entry(collector_index, project) or collector_index.get(collector)
     if not hasattr(equipment, "get"):
         return {
             "collector": collector,
@@ -545,6 +585,11 @@ def merge_projects_by_collector(
     report_rules: Dict[str, object],
     oel_index: Dict[str, Dict[str, object]] | None = None,
 ) -> List[Dict[str, str]]:
+    rows = [
+        row
+        for row in rows
+        if not is_ignored_project(row.get("project", ""), report_rules)
+    ]
     merged: List[Dict[str, str]] = []
     grouped: Dict[Tuple[str, ...], Dict[str, str]] = {}
     project_orders: Dict[Tuple[str, ...], List[str]] = {}
@@ -597,7 +642,7 @@ def merge_projects_by_collector(
         source = {key: row.get(key, "") for key in table3_keys}
         sampling_context = source.get("target", "")
         project = source.get("project", "")
-        project_rule = rule_index.get(normalize_lookup(project), {})
+        project_rule = lookup_entry(rule_index, project, {})
         if (
             is_physical_factor(project, project_rule)
             and project_rule.get("category") != "physical"
@@ -944,6 +989,13 @@ def main() -> int:
             parsed = json.loads(args.parsed_json.read_text(encoding="utf-8"))
             if not isinstance(parsed, dict):
                 raise ValueError("--parsed-json 的顶层必须是 JSON 对象")
+            errors, _warnings = parse_pdf.validate_reviewed_payload(parsed)
+            if errors:
+                raise ValueError(
+                    "--parsed-json 未通过审核门禁，请先运行 prepare_reviewed_json.py：\n- "
+                    + "\n- ".join(errors)
+                )
+            parsed = parse_pdf.rebuild_reviewed_payload(parsed)
         else:
             parsed = parse_pdf.build_payload(args.pdf)
         component_payload = (
