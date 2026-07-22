@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import argparse
 import html
-import json
 import re
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Dict, List
+
+from render_python_data import render_record_mapping
 
 
 MISSING_VALUES = {"", "-", "—", "——", "/"}
@@ -401,20 +402,30 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=root / "knowledge" / "oel_limits.json",
+        default=root / "scripts" / "data_store" / "oel_limits.py",
     )
     args = parser.parse_args()
     database = build_database(args.source)
-    items = list(database.items())
-    lines = ["{"]
-    for index, (project, limit_types) in enumerate(items):
-        comma = "," if index < len(items) - 1 else ""
-        lines.append(
-            f"  {json.dumps(project, ensure_ascii=False)}: "
-            f"{json.dumps(limit_types, ensure_ascii=False)}{comma}"
+    records = {
+        project: {
+            "project": project,
+            "limit_types": tuple(limit_types),
+        }
+        for project, limit_types in database.items()
+    }
+    output = (
+        '"""Direct project-to-GBZ 2.1 occupational exposure-limit types."""\n\n'
+        "from typing import Final\n\n"
+        "from .models import OELRule\n\n\n"
+        + render_record_mapping(
+            "OEL_INDEX",
+            "dict[str, OELRule]",
+            "OELRule",
+            records,
+            ("project", "limit_types"),
         )
-    lines.append("}")
-    args.output.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    )
+    args.output.write_text(output, encoding="utf-8")
     return 0
 
 

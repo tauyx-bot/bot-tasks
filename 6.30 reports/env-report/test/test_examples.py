@@ -76,7 +76,6 @@ def run_example(
     script: Path,
     pdf_path: Path,
     result_json: Path,
-    config: Path,
 ) -> None:
     result = subprocess.run(
         [
@@ -86,8 +85,6 @@ def run_example(
             str(pdf_path),
             "--output",
             str(result_json),
-            "--config",
-            str(config),
         ],
         check=False,
         capture_output=True,
@@ -104,7 +101,6 @@ def main() -> int:
     parser.add_argument("--examples-dir", type=Path, default=root_dir / "examples")
     parser.add_argument("--expected-dir", type=Path, default=test_dir / "expected")
     parser.add_argument("--results-dir", type=Path, default=test_dir / "results")
-    parser.add_argument("--parser-config", type=Path, default=root_dir / "knowledge" / "report_rules.json")
     parser.add_argument("--config", type=Path, default=test_dir / "json_compare_config.json")
     parser.add_argument("--refresh-expected", action="store_true")
     args = parser.parse_args()
@@ -123,7 +119,7 @@ def main() -> int:
             continue
         expected_json = args.expected_dir / f"{pdf_path.stem}.expected.json"
         result_json = args.results_dir / f"{pdf_path.stem}.result.json"
-        run_example(script, pdf_path, result_json, args.parser_config)
+        run_example(script, pdf_path, result_json)
 
         if args.refresh_expected:
             expected_json.write_text(result_json.read_text(encoding="utf-8"), encoding="utf-8")

@@ -13,6 +13,8 @@ from typing import Dict, List, Tuple
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 
+from data_store.report_rules import REPORT_RULES
+
 
 TABLE2_COLUMNS = ["检测项目", "检测依据", "样品保存条件和期限"]
 TABLE3_KEYS = [
@@ -37,7 +39,7 @@ TABLE3_KEYS = [
     "representative_time",
 ]
 
-DOCUMENT_RULES: Dict[str, object] = {}
+DOCUMENT_RULES: Dict[str, object] = REPORT_RULES["document"]  # type: ignore[assignment]
 
 
 def import_docx():
@@ -46,15 +48,6 @@ def import_docx():
     except ModuleNotFoundError as exc:  # pragma: no cover - runtime env check
         raise RuntimeError("python-docx is not installed") from exc
     return Document
-
-
-def load_document_rules(path: Path) -> Dict[str, object]:
-    if not path.exists():
-        raise RuntimeError(f"report rules file not found: {path}")
-    rules = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(rules, dict) or not isinstance(rules.get("document"), dict):
-        raise RuntimeError("report rules file must contain a document object")
-    return rules["document"]
 
 
 def format_fill_run(run) -> None:
@@ -299,35 +292,34 @@ def write_table3(table, rows: List[Dict[str, str]]) -> None:
         merge_vertical_same_value_cells(table, start_row, end_row, 0, required_match_column_idxs=(1, 2, 5))
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--template", required=True, type=Path)
-    parser.add_argument("--payload", required=True, type=Path)
-    parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--config", type=Path)
-    args = parser.parse_args()
-
-    try:
-        global DOCUMENT_RULES
-        config_path = args.config or Path(__file__).resolve().parent.parent / "knowledge" / "report_rules.json"
-        DOCUMENT_RULES = load_document_rules(config_path)
-        Document = import_docx()
-        payload = load_payload(args.payload)
-        doc = Document(str(args.template))
-    except Exception as exc:  # pragma: no cover - CLI error path
-        print(str(exc), file=sys.stderr)
-        return 1
-
+def fill_document(template: Path, payload: Dict[str, object], output: Path) -> None:
+    """Fill and save a DOCX directly from an in-memory report payload."""
+    Document = import_docx()
+    doc = Document(str(template))
     tables = doc.tables
     if len(tables) < 3:
-        print("template does not contain the expected 3 tables", file=sys.stderr)
-        return 1
+        raise RuntimeError("template does not contain the expected 3 tables")
 
     write_doc_meta(doc, payload.get("header", {}))
     write_header(tables[0], payload.get("header", {}))
     write_table2(tables[1], payload.get("table2", []))
     write_table3(tables[2], payload.get("table3", []))
-    doc.save(str(args.output))
+    doc.save(str(output))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--template", required=True, type=Path)
+    parser.add_argument("--payload", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args()
+
+    try:
+        payload = load_payload(args.payload)
+        fill_document(args.template, payload, args.output)
+    except Exception as exc:  # pragma: no cover - CLI error path
+        print(str(exc), file=sys.stderr)
+        return 1
     return 0
 
 

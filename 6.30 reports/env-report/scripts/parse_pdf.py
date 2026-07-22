@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
+from data_store.report_rules import REPORT_RULES
+
 
 HEADER_KEYS = [
     "detection_task_no",
@@ -52,7 +54,7 @@ TABLE3_KEYS = [
 SPLIT_PATTERN = re.compile(r"[、，,；;\n]+")
 WORK_CONTENT_SPLIT_PATTERN = re.compile(r"\s*(?:、|，|,|；|;|/|\n)+\s*")
 LOCATION_MARKERS = ("工位", "岗位", "车间", "区域", "区", "营业厅", "库", "房")
-PARSING_RULES: Dict[str, Any] = {}
+PARSING_RULES: Dict[str, Any] = REPORT_RULES["parsing"]  # type: ignore[assignment]
 
 
 def import_pdfplumber():
@@ -61,15 +63,6 @@ def import_pdfplumber():
     except ModuleNotFoundError as exc:  # pragma: no cover - runtime env check
         raise RuntimeError("pdfplumber is not installed") from exc
     return pdfplumber
-
-
-def load_parsing_rules(path: Path) -> Dict[str, Any]:
-    if not path.exists():
-        raise RuntimeError(f"report rules file not found: {path}")
-    rules = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(rules, dict) or not isinstance(rules.get("parsing"), dict):
-        raise RuntimeError("report rules file must contain a parsing object")
-    return rules["parsing"]
 
 
 def normalize_text(value: Any) -> str:
@@ -918,9 +911,7 @@ def build_missing_fields(header: Dict[str, str], overall_rows: List[Dict[str, st
     return missing
 
 
-def build_payload(pdf_path: Path, config_path: Path) -> Dict[str, Any]:
-    global PARSING_RULES
-    PARSING_RULES = load_parsing_rules(config_path)
+def build_payload(pdf_path: Path) -> Dict[str, Any]:
     full_text, raw_tables = read_pdf_tables(pdf_path)
     header = extract_header(full_text, raw_tables)
     overall_raw_rows, detail_raw_rows = parse_exposure_rows(raw_tables)
@@ -951,12 +942,10 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pdf", required=True, type=Path)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--config", type=Path)
     args = parser.parse_args()
 
     try:
-        config_path = args.config or Path(__file__).resolve().parent.parent / "knowledge" / "report_rules.json"
-        payload = build_payload(args.pdf, config_path)
+        payload = build_payload(args.pdf)
     except Exception as exc:  # pragma: no cover - CLI error path
         print(str(exc), file=sys.stderr)
         return 1

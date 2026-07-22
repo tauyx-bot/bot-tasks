@@ -6,19 +6,18 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+import fill_docx
+import parse_component_report
+import parse_pdf
+from data_store.hazards import COLLECTOR_INDEX, RULE_INDEX
+from data_store.oel_limits import OEL_INDEX
+from data_store.physical_factors import PHYSICAL_FACTOR_INDEX
+from data_store.report_rules import REPORT_RULES
 
-DEFAULT_OEL_PATH = Path(__file__).resolve().parent.parent / "knowledge" / "oel_limits.json"
-DEFAULT_PHYSICAL_FACTORS_PATH = (
-    Path(__file__).resolve().parent.parent / "knowledge" / "physical_factors.json"
-)
-_DEFAULT_OEL_INDEX: Dict[str, Dict[str, object]] | None = None
-_DEFAULT_PHYSICAL_FACTOR_INDEX: set[str] | None = None
 
 
 def normalize_lookup(value: str) -> str:
@@ -36,75 +35,6 @@ def normalize_lookup(value: str) -> str:
     return "".join("".join(outside).split())
 
 
-def load_rule_index(index_path: Path) -> Dict[str, Dict[str, str]]:
-    if not index_path.exists():
-        raise RuntimeError(f"rule data file not found: {index_path}")
-    data = json.loads(index_path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise RuntimeError("rule data file must be a JSON object")
-
-    index: Dict[str, Dict[str, str]] = {}
-    for name, payload in data.items():
-        if isinstance(payload, list) and len(payload) >= 2:
-            basis = "" if payload[0] is None else str(payload[0]).strip()
-            storage = "" if payload[1] is None else str(payload[1]).strip()
-            collector_config = "" if len(payload) < 3 or payload[2] is None else str(payload[2]).strip()
-            collector_parts = re.split(r"[|｜]", collector_config, maxsplit=1)
-            collector = collector_parts[0].strip()
-            analysis_group = collector_parts[1].strip() if len(collector_parts) > 1 else ""
-            flow_rates = "" if len(payload) < 4 or payload[3] is None else str(payload[3]).strip()
-            # Array rules do not define a display-name override. Preserve the
-            # name found in the survey (including qualifiers such as
-            # “全部异构体”) when a normalized rule is matched.
-            display_name = ""
-            category = "physical" if collector == "直读" else "dust" if "丙纶滤膜" in collector else "chemical"
-            sampling_policy = "point_only" if category == "physical" else "default"
-            default_individual_sampling_time = ""
-            full_measure_below_hours = ""
-            # Extended physical-factor arrays retain the policy fields that
-            # were previously represented by an object. The fifth element in
-            # ordinary five-element arrays is only the method description.
-            if len(payload) >= 7:
-                sampling_policy = str(payload[4] or sampling_policy).strip()
-                default_individual_sampling_time = str(payload[5] or "").strip()
-                full_measure_below_hours = str(payload[6] or "").strip()
-        elif isinstance(payload, dict):
-            basis = str(payload.get("basis", "") or "").strip()
-            storage = str(payload.get("storage", "") or "").strip()
-            collector = str(payload.get("collector", "") or "").strip()
-            analysis_group = str(payload.get("analysis_group", "") or "").strip()
-            flow_rates = str(payload.get("flow_rates", "") or "").strip()
-            display_name = str(payload.get("display_name", name) or name).strip()
-            category = str(
-                payload.get(
-                    "category",
-                    "physical" if collector == "直读" else "dust" if "丙纶滤膜" in collector else "chemical",
-                )
-            ).strip()
-            sampling_policy = str(
-                payload.get("sampling_policy", "point_only" if category == "physical" else "default")
-            ).strip()
-            default_individual_sampling_time = str(
-                payload.get("default_individual_sampling_time", "") or ""
-            ).strip()
-            full_measure_below_hours = str(payload.get("full_measure_below_hours", "") or "").strip()
-        else:
-            continue
-        index[normalize_lookup(name)] = {
-            "basis": basis,
-            "storage": storage,
-            "collector": collector,
-            "analysis_group": analysis_group,
-            "flow_rates": flow_rates,
-            "display_name": display_name,
-            "category": category,
-            "sampling_policy": sampling_policy,
-            "default_individual_sampling_time": default_individual_sampling_time,
-            "full_measure_below_hours": full_measure_below_hours,
-        }
-    return index
-
-
 def configured_flow_rates(value: str) -> Dict[str, str]:
     """Parse ``短时间:0.1L/min; 长时间:0.05L/min`` rule data."""
     rates: Dict[str, str] = {}
@@ -116,7 +46,7 @@ def configured_flow_rates(value: str) -> Dict[str, str]:
         if not time_type or not rate:
             continue
         # The report column already carries the L/min unit, so retain the
-        # numeric value/range in the same form used by collector.json.
+        # Keep the numeric value/range without the column's L/min unit.
         rates[time_type] = re.sub(
             r"\s*L\s*/\s*min", "", rate, flags=re.IGNORECASE
         ).strip()
@@ -153,103 +83,22 @@ def display_project_name(project: str, rule_index: Dict[str, Dict[str, str]]) ->
     return rule.get("display_name", "") or project
 
 
-def load_collector_index(index_path: Path) -> Dict[str, object]:
-    if not index_path.exists():
-        raise RuntimeError(f"collector data file not found: {index_path}")
-    data = json.loads(index_path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise RuntimeError("collector data file must be a JSON object")
-
-    collector_devices = data
-    if not collector_devices or not all(isinstance(values, dict) for values in collector_devices.values()):
-        raise RuntimeError("collector data must map each collector directly to its equipment object")
-
-    return collector_devices
-
-
-def load_report_rules(path: Path) -> Dict[str, object]:
-    if not path.exists():
-        raise RuntimeError(f"report rules file not found: {path}")
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise RuntimeError("report rules file must be a JSON object")
-    return data
-
-
-def load_oel_index(path: Path) -> Dict[str, Dict[str, object]]:
-    """Load the direct project-to-OEL-type mapping derived from GBZ 2.1."""
-    if not path.exists():
-        raise RuntimeError(f"OEL data file not found: {path}")
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise RuntimeError("OEL data file must be a JSON object")
-
-    index: Dict[str, Dict[str, object]] = {}
-    for project, configured_types in data.items():
-        if not isinstance(configured_types, list):
-            raise RuntimeError(f"OEL types for {project} must be an array")
-        limit_types = {str(limit_type) for limit_type in configured_types}
-        invalid_types = limit_types - {"MAC", "PC-TWA", "PC-STEL"}
-        if invalid_types:
-            raise RuntimeError(f"unsupported OEL types for {project}: {sorted(invalid_types)}")
-        if "MAC" in limit_types and "PC-STEL" in limit_types:
-            raise RuntimeError(f"{project} cannot define both MAC and PC-STEL")
-        if not limit_types:
-            continue
-        keyed_entry: Dict[str, object] = {
-            "project": str(project),
-            "limit_types": limit_types,
-        }
-        key = normalize_lookup(str(project))
-        if key in index:
-            if index[key]["limit_types"] != limit_types:
-                raise RuntimeError(f"conflicting OEL types after normalization: {project}")
-            continue
-        index[key] = keyed_entry
-    return index
-
-
 def default_oel_index() -> Dict[str, Dict[str, object]]:
-    global _DEFAULT_OEL_INDEX
-    if _DEFAULT_OEL_INDEX is None:
-        _DEFAULT_OEL_INDEX = load_oel_index(DEFAULT_OEL_PATH)
-    return _DEFAULT_OEL_INDEX
-
-
-def load_physical_factor_index(path: Path) -> set[str]:
-    """Load normalized GBZ 2.2 physical-factor names and aliases."""
-    if not path.exists():
-        raise RuntimeError(f"physical-factor data file not found: {path}")
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, list) or not all(isinstance(item, str) for item in data):
-        raise RuntimeError("physical-factor data file must be an array of names")
-    normalized = {
-        normalize_physical_lookup(item)
-        for item in data
-        if normalize_physical_lookup(item)
-    }
-    if len(normalized) != len(data):
-        raise RuntimeError("physical-factor data contains empty or duplicate normalized names")
-    return normalized
+    return OEL_INDEX
 
 
 def normalize_physical_lookup(value: str) -> str:
     return normalize_lookup(value).replace("～", "~").casefold()
 
 
-def default_physical_factor_index() -> set[str]:
-    global _DEFAULT_PHYSICAL_FACTOR_INDEX
-    if _DEFAULT_PHYSICAL_FACTOR_INDEX is None:
-        _DEFAULT_PHYSICAL_FACTOR_INDEX = load_physical_factor_index(
-            DEFAULT_PHYSICAL_FACTORS_PATH
-        )
-    return _DEFAULT_PHYSICAL_FACTOR_INDEX
+def default_physical_factor_index() -> frozenset[str]:
+    return PHYSICAL_FACTOR_INDEX
 
 
 def is_physical_factor(
     project: str,
     project_rule: Dict[str, str] | None = None,
-    physical_factor_index: set[str] | None = None,
+    physical_factor_index: set[str] | frozenset[str] | None = None,
 ) -> bool:
     if (project_rule or {}).get("category") == "physical":
         return True
@@ -268,28 +117,6 @@ def oel_limit_types(
     index = default_oel_index() if oel_index is None else oel_index
     entry = index.get(normalize_lookup(project), {})
     return set(entry.get("limit_types", set()))
-
-
-def run_parse_script(script: Path, pdf: Path, output: Path, config: Path) -> None:
-    result = subprocess.run(
-        [sys.executable, str(script), "--pdf", str(pdf), "--output", str(output), "--config", str(config)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "parse_pdf.py failed")
-
-
-def run_component_parse_script(script: Path, pdf: Path, output: Path) -> None:
-    result = subprocess.run(
-        [sys.executable, str(script), "--pdf", str(pdf), "--output", str(output)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "parse_component_report.py failed")
 
 
 def dedupe(items: List[str]) -> List[str]:
@@ -443,23 +270,23 @@ def collector_for_project(
         return {"collector": "", "device": "", "flow_rate": "", "supports_individual": False}
     collector = rule["collector"]
     collector_capabilities = collector_index.get(collector, {})
-    supports_individual = (
-        bool(collector_capabilities.get("supports_individual", True))
-        if isinstance(collector_capabilities, dict)
-        else True
+    supports_individual = bool(
+        collector_capabilities.get("supports_individual", True)
     )
-    point_sampling_time = (
-        str(collector_capabilities.get("point_sampling_time", "") or "").strip()
-        if isinstance(collector_capabilities, dict)
-        else ""
-    )
+    point_sampling_time = str(
+        collector_capabilities.get("point_sampling_time", "") or ""
+    ).strip()
 
     # Direct-reading factors are recorded as the shared collector "直读", but
     # their instruments are factor-specific (for example, noise). Prefer a
     # project-specific configuration when one exists, while retaining the
     # configured collector text in the generated form.
-    equipment = collector_index.get(normalize_lookup(project)) or collector_index.get(collector)
-    if not isinstance(equipment, dict):
+    equipment = (
+        collector_index.get(project)
+        or collector_index.get(normalize_lookup(project))
+        or collector_index.get(collector)
+    )
+    if not hasattr(equipment, "get"):
         return {
             "collector": collector,
             "device": "",
@@ -770,10 +597,16 @@ def merge_projects_by_collector(
         source = {key: row.get(key, "") for key in table3_keys}
         sampling_context = source.get("target", "")
         project = source.get("project", "")
-        project_rule = dict(rule_index.get(normalize_lookup(project), {}))
-        if is_physical_factor(project, project_rule):
-            project_rule["category"] = "physical"
-            project_rule.setdefault("sampling_policy", "point_only")
+        project_rule = rule_index.get(normalize_lookup(project), {})
+        if (
+            is_physical_factor(project, project_rule)
+            and project_rule.get("category") != "physical"
+        ):
+            project_rule = {
+                **project_rule,
+                "category": "physical",
+                "sampling_policy": "point_only",
+            }
         initial_collector = collector_for_project(
             project,
             sampling_rules["point_mode"],
@@ -860,8 +693,7 @@ def merge_projects_by_collector(
             parameter_time = source.get("representative_time", "")
             if sampling_mode == sampling_rules["individual_mode"]:
                 filled["workplace"] = (
-                    source.get("job_work_content", "")
-                    or source.get("job_workplace", "")
+                    source.get("job_workplace", "")
                     or source.get("workplace", "")
                 )
                 parameter_time = (
@@ -1040,26 +872,56 @@ def build_table3(
     return output, missing
 
 
-def run_fill_script(script: Path, template: Path, payload: Path, output: Path, config: Path) -> None:
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(script),
-            "--template",
-            str(template),
-            "--payload",
-            str(payload),
-            "--output",
-            str(output),
-            "--config",
-            str(config),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+def build_report_payload(
+    parsed: Dict[str, object],
+    component_payload: Dict[str, object] | None = None,
+) -> Dict[str, object]:
+    """Build the final report payload entirely from in-memory Python objects."""
+    component_missing: List[str] = []
+    if component_payload is not None:
+        component_missing = replace_component_placeholders(
+            parsed,
+            component_payload,
+            REPORT_RULES,
+        )
+
+    table2, missing2 = build_table2(
+        parsed.get("projects", []),
+        parsed.get("table3", []),
+        RULE_INDEX,
+        REPORT_RULES,
     )
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "fill_docx.py failed")
+    table3, missing3 = build_table3(
+        parsed.get("table3", []),
+        COLLECTOR_INDEX,
+        RULE_INDEX,
+        parsed.get("header", {}).get("detection_type", ""),
+        REPORT_RULES,
+        OEL_INDEX,
+    )
+    payload: Dict[str, object] = {
+        "header": parsed.get("header", {}),
+        "projects": parsed.get("projects", []),
+        "table2": table2,
+        "table3": table3,
+        "missing_fields": dedupe(
+            parsed.get("missing_fields", []) + component_missing + missing2 + missing3
+        ),
+        "survey_tables": parsed.get("survey_tables", {}),
+        "inference_notes": dedupe(
+            [
+                "{position}: {reason}".format(
+                    position=row.get("position", ""),
+                    reason=row.get("job_type_inference_reason", ""),
+                )
+                for row in parsed.get("table3", [])
+                if row.get("job_type_inference_reason", "")
+            ]
+        ),
+    }
+    if component_payload is not None:
+        payload["component_analysis"] = component_payload
+    return payload
 
 
 def main() -> int:
@@ -1073,100 +935,31 @@ def main() -> int:
     )
     parser.add_argument("--component-report", type=Path)
     parser.add_argument("--template", required=True, type=Path)
-    parser.add_argument("--rules", required=True, type=Path)
-    parser.add_argument("--config", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--json-out", type=Path)
     args = parser.parse_args()
 
-    scripts_dir = Path(__file__).resolve().parent
-    root_dir = scripts_dir.parent
-    parse_script = scripts_dir / "parse_pdf.py"
-    component_parse_script = scripts_dir / "parse_component_report.py"
-    fill_script = scripts_dir / "fill_docx.py"
-    collector_path = root_dir / "knowledge" / "collector.json"
-    oel_path = root_dir / "knowledge" / "oel_limits.json"
-    config_path = args.config or root_dir / "knowledge" / "report_rules.json"
-
     try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            raw_payload_path = Path(tmpdir) / "parsed.json"
-            component_payload_path = Path(tmpdir) / "components.json"
-            final_payload_path = Path(tmpdir) / "payload.json"
-            if args.parsed_json:
-                parsed = json.loads(args.parsed_json.read_text(encoding="utf-8"))
-                if not isinstance(parsed, dict):
-                    raise ValueError("--parsed-json 的顶层必须是 JSON 对象")
-            else:
-                run_parse_script(parse_script, args.pdf, raw_payload_path, config_path)
-                parsed = json.loads(raw_payload_path.read_text(encoding="utf-8"))
-            rule_index = load_rule_index(args.rules)
-            collector_index = load_collector_index(collector_path)
-            oel_index = load_oel_index(oel_path)
-            report_rules = load_report_rules(config_path)
-            component_payload: Dict[str, object] = {"samples": []}
-            component_missing: List[str] = []
-            if args.component_report:
-                run_component_parse_script(
-                    component_parse_script,
-                    args.component_report,
-                    component_payload_path,
-                )
-                component_payload = json.loads(component_payload_path.read_text(encoding="utf-8"))
-                component_missing = replace_component_placeholders(
-                    parsed,
-                    component_payload,
-                    report_rules,
-                )
-            table2, missing2 = build_table2(
-                parsed.get("projects", []),
-                parsed.get("table3", []),
-                rule_index,
-                report_rules,
-            )
-            table3, missing3 = build_table3(
-                parsed.get("table3", []),
-                collector_index,
-                rule_index,
-                parsed.get("header", {}).get("detection_type", ""),
-                report_rules,
-                oel_index,
-            )
-            missing_fields = dedupe(
-                parsed.get("missing_fields", []) + component_missing + missing2 + missing3
-            )
-            payload = {
-                "header": parsed.get("header", {}),
-                "projects": parsed.get("projects", []),
-                "table2": table2,
-                "table3": table3,
-                "missing_fields": missing_fields,
-                "survey_tables": parsed.get("survey_tables", {}),
-                "inference_notes": dedupe(
-                    [
-                        "{position}: {reason}".format(
-                            position=row.get("position", ""),
-                            reason=row.get("job_type_inference_reason", ""),
-                        )
-                        for row in parsed.get("table3", [])
-                        if row.get("job_type_inference_reason", "")
-                    ]
-                ),
-            }
-            if args.component_report:
-                payload["component_analysis"] = component_payload
-            final_payload_path.write_text(
+        if args.parsed_json:
+            parsed = json.loads(args.parsed_json.read_text(encoding="utf-8"))
+            if not isinstance(parsed, dict):
+                raise ValueError("--parsed-json 的顶层必须是 JSON 对象")
+        else:
+            parsed = parse_pdf.build_payload(args.pdf)
+        component_payload = (
+            parse_component_report.build_payload(args.component_report)
+            if args.component_report
+            else None
+        )
+        payload = build_report_payload(parsed, component_payload)
+        fill_docx.fill_document(args.template, payload, args.output)
+        if args.json_out:
+            args.json_out.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            run_fill_script(fill_script, args.template, final_payload_path, args.output, config_path)
-            if args.json_out:
-                args.json_out.write_text(
-                    json.dumps(payload, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-            else:
-                print(json.dumps(payload["missing_fields"], ensure_ascii=False, indent=2))
+        else:
+            print(json.dumps(payload["missing_fields"], ensure_ascii=False, indent=2))
     except Exception as exc:  # pragma: no cover - CLI error path
         print(str(exc), file=sys.stderr)
         return 1

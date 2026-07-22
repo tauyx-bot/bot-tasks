@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 import unittest
 from pathlib import Path
@@ -16,24 +15,21 @@ import generate_report  # noqa: E402
 import parse_pdf  # noqa: E402
 import build_oel_database  # noqa: E402
 import build_physical_factor_database  # noqa: E402
+from data_store.hazards import COLLECTOR_INDEX, HAZARDS, RULE_INDEX  # noqa: E402
+from data_store.models import HazardData  # noqa: E402
+from data_store.oel_limits import OEL_INDEX  # noqa: E402
+from data_store.physical_factors import PHYSICAL_FACTOR_INDEX  # noqa: E402
+from data_store.report_rules import REPORT_RULES  # noqa: E402
 
 
 class MobileJobRulesTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.rules = json.loads(
-            (ROOT / "knowledge" / "report_rules.json").read_text(encoding="utf-8")
-        )
-        cls.rule_index = generate_report.load_rule_index(ROOT / "knowledge" / "data.json")
-        cls.collector_index = generate_report.load_collector_index(
-            ROOT / "knowledge" / "collector.json"
-        )
-        cls.oel_index = generate_report.load_oel_index(
-            ROOT / "knowledge" / "oel_limits.json"
-        )
-        cls.physical_factor_index = generate_report.load_physical_factor_index(
-            ROOT / "knowledge" / "physical_factors.json"
-        )
+        cls.rules = REPORT_RULES
+        cls.rule_index = RULE_INDEX
+        cls.collector_index = COLLECTOR_INDEX
+        cls.oel_index = OEL_INDEX
+        cls.physical_factor_index = PHYSICAL_FACTOR_INDEX
         parse_pdf.PARSING_RULES = cls.rules["parsing"]
 
     def test_limit_type_is_derived_from_gbz_oels_and_sampling_mode(self) -> None:
@@ -90,9 +86,7 @@ class MobileJobRulesTest(unittest.TestCase):
         self.assertEqual("/", rows[0]["limit_type"])
 
     def test_all_gbz_22_factor_names_and_aliases_use_slash_limit_type(self) -> None:
-        factor_names = json.loads(
-            (ROOT / "knowledge" / "physical_factors.json").read_text(encoding="utf-8")
-        )
+        factor_names = PHYSICAL_FACTOR_INDEX
         chemical_rule = {"category": "chemical", "collector": "活性炭管"}
         for project in factor_names:
             with self.subTest(project=project):
@@ -155,13 +149,14 @@ class MobileJobRulesTest(unittest.TestCase):
         self.assertEqual("定点", rows[0]["sampling_mode"])
 
     def test_committed_physical_factor_database_matches_gbz_22_source(self) -> None:
-        committed = json.loads(
-            (ROOT / "knowledge" / "physical_factors.json").read_text(encoding="utf-8")
-        )
         rebuilt = build_physical_factor_database.build_database(
             ROOT / "knowledge" / "物理危害.md"
         )
-        self.assertEqual(committed, rebuilt)
+        normalized = {
+            "".join(item.split()).replace("～", "~").casefold()
+            for item in rebuilt
+        }
+        self.assertEqual(PHYSICAL_FACTOR_INDEX, normalized)
 
     def test_oel_lookup_ignores_chinese_english_and_mixed_parentheses(self) -> None:
         base = generate_report.normalize_lookup("碳酰氯")
@@ -205,18 +200,20 @@ class MobileJobRulesTest(unittest.TestCase):
             )
 
     def test_committed_oel_database_matches_markdown_source(self) -> None:
-        committed = json.loads(
-            (ROOT / "knowledge" / "oel_limits.json").read_text(encoding="utf-8")
-        )
+        committed = {
+            project: list(entry["limit_types"])
+            for project, entry in OEL_INDEX.items()
+        }
         rebuilt = build_oel_database.build_database(
             ROOT / "knowledge" / "化学有害因素.md"
         )
         self.assertEqual(committed, rebuilt)
 
     def test_dust_enumeration_expands_but_condition_does_not(self) -> None:
-        database = json.loads(
-            (ROOT / "knowledge" / "oel_limits.json").read_text(encoding="utf-8")
-        )
+        database = {
+            project: list(entry["limit_types"])
+            for project, entry in OEL_INDEX.items()
+        }
         for project in (
             "人造矿物纤维绝热棉粉尘",
             "玻璃棉粉尘",
@@ -229,9 +226,10 @@ class MobileJobRulesTest(unittest.TestCase):
         self.assertNotIn("游离 SiO2含量<10%", database)
 
     def test_semantic_parenthetical_aliases_are_expanded(self) -> None:
-        database = json.loads(
-            (ROOT / "knowledge" / "oel_limits.json").read_text(encoding="utf-8")
-        )
+        database = {
+            project: list(entry["limit_types"])
+            for project, entry in OEL_INDEX.items()
+        }
         alias_groups = (
             ("碳酰氯", "光气"),
             ("甲乙酮", "2-丁酮", "丁酮"),
@@ -247,9 +245,10 @@ class MobileJobRulesTest(unittest.TestCase):
                 self.assertEqual(expected, database[alias], alias)
 
     def test_structural_parentheses_are_preserved(self) -> None:
-        database = json.loads(
-            (ROOT / "knowledge" / "oel_limits.json").read_text(encoding="utf-8")
-        )
+        database = {
+            project: list(entry["limit_types"])
+            for project, entry in OEL_INDEX.items()
+        }
         self.assertEqual(
             ["PC-TWA", "PC-STEL"],
             database["双(巯基乙酸)二辛基锡"],
@@ -359,7 +358,7 @@ class MobileJobRulesTest(unittest.TestCase):
         individual = [row for row in rows if row["sampling_mode"] == "个体"]
         self.assertEqual(1, len(individual))
         self.assertEqual(
-            "1F开料车间开料工位、2F生产车间粘膜工位、2F生产车间过膜工位",
+            "1F开料车间、2F生产车间",
             individual[0]["workplace"],
         )
         self.assertEqual("劳动者", individual[0]["target"])
@@ -616,7 +615,7 @@ class MobileJobRulesTest(unittest.TestCase):
     def test_project_flow_rate_uses_time_type_from_rule_data(self) -> None:
         rule = self.rule_index[generate_report.normalize_lookup("环己酮")]
         for mode, time_type, expected in (
-            ("定点", "短时间", "0.3"),
+            ("定点", "短时间", "0.1"),
             ("个体", "长时间", "0.05"),
         ):
             with self.subTest(mode=mode):
@@ -632,6 +631,37 @@ class MobileJobRulesTest(unittest.TestCase):
                 "其他粉尘", "定点", "短时间", self.rule_index, "wrong"
             ),
         )
+
+    def test_collector_database_covers_every_hazard_and_solvent_naphtha(self) -> None:
+        self.assertEqual(408, len(HAZARDS))
+
+        solvent_naphtha = HAZARDS["溶剂汽油"]
+        self.assertEqual("活性炭管，热解吸型", solvent_naphtha["空气收集器"])
+        self.assertEqual("防爆大气采样器QC-4S", solvent_naphtha["定点采样设备"])
+        self.assertEqual("0.1", solvent_naphtha["定点采样流量"])
+        self.assertEqual("防爆空气采样器FCC-1500H", solvent_naphtha["个体采样设备"])
+        self.assertEqual("0.05", solvent_naphtha["个体采样流量"])
+
+        for mode, expected in (
+            ("定点", "防爆大气采样器QC-4S"),
+            ("个体", "防爆空气采样器FCC-1500H"),
+        ):
+            with self.subTest(mode=mode):
+                collector = generate_report.collector_for_project(
+                    "溶剂汽油",
+                    mode,
+                    self.collector_index,
+                    self.rule_index,
+                    self.rules,
+                )
+                self.assertEqual(expected, collector["device"])
+
+    def test_static_hazard_records_use_compact_slots_classes(self) -> None:
+        hazard = HAZARDS["溶剂汽油"]
+        self.assertIsInstance(hazard, HazardData)
+        self.assertFalse(hasattr(hazard, "__dict__"))
+        self.assertIs(RULE_INDEX["溶剂汽油"], hazard)
+        self.assertIs(COLLECTOR_INDEX["溶剂汽油"], hazard)
 
     def test_different_analysis_treatments_do_not_merge(self) -> None:
         rule_index = {
@@ -730,6 +760,23 @@ class MobileJobRulesTest(unittest.TestCase):
             {"加油工位加油、卸油工位卸油、营业厅收银"},
             {row["job_work_content"] for row in rows},
         )
+        generated_rows, _missing = generate_report.build_table3(
+            rows,
+            self.collector_index,
+            self.rule_index,
+            "定期检测",
+            self.rules,
+            self.oel_index,
+        )
+        individual_rows = [
+            row for row in generated_rows if row["sampling_mode"] == "个体"
+        ]
+        self.assertTrue(individual_rows)
+        self.assertEqual(
+            {"加油区、卸油区、营业厅"},
+            {row["workplace"] for row in individual_rows},
+        )
+
     def test_fixed_stable_chemical_uses_individual_sample_only(self) -> None:
         source = {
             "job_group_id": "overall:0",

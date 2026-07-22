@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 import argparse
-import json
 import re
 from pathlib import Path
 from typing import Dict, List
+
+from render_python_data import render_frozenset_module
 
 
 SECTION_SUFFIXES = (
@@ -108,12 +109,20 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=root / "knowledge" / "physical_factors.json",
+        default=root / "scripts" / "data_store" / "physical_factors.py",
     )
     args = parser.parse_args()
     database = build_database(args.source)
+    normalized = {
+        "".join(item.split()).replace("～", "~").casefold()
+        for item in database
+    }
     args.output.write_text(
-        json.dumps(database, ensure_ascii=False, indent=2) + "\n",
+        render_frozenset_module(
+            "Normalized GBZ 2.2 physical-factor names and aliases.",
+            "PHYSICAL_FACTOR_INDEX",
+            normalized,
+        ),
         encoding="utf-8",
     )
     return 0
