@@ -72,6 +72,7 @@ def test_markdown_issue_is_self_contained():
     assert "对应报告批注序号：第 4 条" in markdown
     assert "内部规则标识：`date_check`" in markdown
     assert "检测报告位置：封面日期" in markdown
+    assert "报告中的相关内容" not in markdown
     assert "原始表.pdf，首页日期栏；仅有调查日期" in markdown
     assert "问题来源：来源未提供日期" in markdown
 

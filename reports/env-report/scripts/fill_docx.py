@@ -10,6 +10,10 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+REPORTS_ROOT = Path(__file__).resolve().parents[2]
+if str(REPORTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPORTS_ROOT))
+
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 

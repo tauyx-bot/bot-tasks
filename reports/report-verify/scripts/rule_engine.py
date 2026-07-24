@@ -466,7 +466,6 @@ def render_markdown(payload: dict[str, Any], title: str) -> str:
                 f"- 对应报告批注序号：第 {item.get('comment_number') or item['comment_id'] + 1} 条",
                 f"- 批注意见：{item['comment'] or '批注内容为空'}",
                 f"- 检测报告位置：{item['report_location']}",
-                f"- 报告中的相关内容：{item['anchor'] or item['context'] or '没有选中具体文字'}",
                 f"- 核验说明：{item['rule']}",
                 f"- 核验结论：{item['message']}（内部规则标识：`{item.get('rule_key', 'missing_rule')}`）",
                 f"- 问题来源：{item['problem_origin']}",

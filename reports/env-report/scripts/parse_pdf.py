@@ -10,6 +10,10 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
+REPORTS_ROOT = Path(__file__).resolve().parents[2]
+if str(REPORTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPORTS_ROOT))
+
 from data_store.report_rules import REPORT_RULES
 
 
