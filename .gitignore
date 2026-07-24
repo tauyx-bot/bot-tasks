@@ -1,2 +1,4 @@
 **/.workbuddy/
 ~$*
+data/
+.venv

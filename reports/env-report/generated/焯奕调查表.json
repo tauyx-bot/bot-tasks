@@ -1,0 +1,386 @@
+{
+  "header": {
+    "detection_task_no": "粤鑫职定期2025197号",
+    "unit_name": "中山市焯奕服饰有限公司",
+    "contact": "谢总13923351919",
+    "address": "中山市小榄镇竹源社区侨源东路13号（物业一区142号之2）",
+    "detection_type": "定期检测",
+    "expected_sampling_time": "8:00-12:00，13:30-17:30"
+  },
+  "projects": [
+    "噪声",
+    "乙酸甲酯",
+    "正丁醛",
+    "甲苯"
+  ],
+  "table2": [
+    {
+      "检测项目": "噪声",
+      "检测依据": "GBZ/T 189.8—2007",
+      "样品保存条件和期限": "/"
+    },
+    {
+      "检测项目": "乙酸甲酯",
+      "检测依据": "GBZ/T 160.63—2007",
+      "样品保存条件和期限": "样品在室温下至少可保存7d"
+    },
+    {
+      "检测项目": "正丁醛",
+      "检测依据": "GBZ/T 300.99—2017",
+      "样品保存条件和期限": "样品在室温下可保存3d"
+    },
+    {
+      "检测项目": "甲苯",
+      "检测依据": "GBZ/T 300.66—2017",
+      "样品保存条件和期限": "样品在室温下可保存7d，置4℃冰箱内可保存14d"
+    }
+  ],
+  "table3": [
+    {
+      "job_group_id": "overall:2",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "固定作业",
+      "job_type_inference_reason": "",
+      "sampling_no": "1",
+      "workplace": "生产车间",
+      "position": "成型工",
+      "people_per_shift": "1",
+      "workstation_count": "1",
+      "workstation_count_source": "设备表运行数：成型生产线共1台",
+      "job_type": "固定",
+      "target": "劳动者",
+      "project": "乙酸甲酯、甲苯",
+      "limit_type": "PC-TWA",
+      "exposure_type": "①",
+      "sampling_mode": "个体",
+      "time_type": "长时间",
+      "collector": "活性炭管，溶剂解吸型",
+      "device": "防爆空气采样器FCC-1500H",
+      "flow_rate": "0.05",
+      "points_per_day": "1",
+      "times_per_day": "1",
+      "days": "1",
+      "sampling_time": "2h",
+      "representative_time": "8h"
+    },
+    {
+      "job_group_id": "overall:2",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "固定作业",
+      "job_type_inference_reason": "",
+      "sampling_no": "1",
+      "workplace": "生产车间",
+      "position": "成型工",
+      "people_per_shift": "1",
+      "workstation_count": "1",
+      "workstation_count_source": "设备表运行数：成型生产线共1台",
+      "job_type": "固定",
+      "target": "劳动者",
+      "project": "正丁醛",
+      "limit_type": "PC-TWA",
+      "exposure_type": "①",
+      "sampling_mode": "个体",
+      "time_type": "长时间",
+      "collector": "硅胶管，热解吸型",
+      "device": "防爆空气采样器FCC-1500H",
+      "flow_rate": "0.05",
+      "points_per_day": "1",
+      "times_per_day": "1",
+      "days": "1",
+      "sampling_time": "2h",
+      "representative_time": "8h"
+    },
+    {
+      "job_group_id": "overall:2",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "固定作业",
+      "job_type_inference_reason": "",
+      "sampling_no": "2",
+      "workplace": "生产车间",
+      "position": "成型工",
+      "people_per_shift": "1",
+      "workstation_count": "1",
+      "workstation_count_source": "设备表运行数：成型生产线共1台",
+      "job_type": "固定",
+      "target": "成型工位",
+      "project": "噪声",
+      "limit_type": "/",
+      "exposure_type": "①",
+      "sampling_mode": "定点",
+      "time_type": "短时间",
+      "collector": "直读",
+      "device": "多功能声级计AWA5688",
+      "flow_rate": "/",
+      "points_per_day": "1",
+      "times_per_day": "1",
+      "days": "1",
+      "sampling_time": "/",
+      "representative_time": "8h"
+    },
+    {
+      "job_group_id": "overall:0",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "固定作业",
+      "job_type_inference_reason": "",
+      "sampling_no": "3",
+      "workplace": "生产车间",
+      "position": "裁床工",
+      "people_per_shift": "1",
+      "workstation_count": "1",
+      "workstation_count_source": "设备表运行数：裁床共1台",
+      "job_type": "固定",
+      "target": "裁床工位",
+      "project": "噪声",
+      "limit_type": "/",
+      "exposure_type": "①",
+      "sampling_mode": "定点",
+      "time_type": "短时间",
+      "collector": "直读",
+      "device": "多功能声级计AWA5688",
+      "flow_rate": "/",
+      "points_per_day": "1",
+      "times_per_day": "1",
+      "days": "1",
+      "sampling_time": "/",
+      "representative_time": "8h"
+    },
+    {
+      "job_group_id": "overall:1",
+      "job_workplace": "生产车间",
+      "job_representative_time": "8h",
+      "source_job_type": "固定作业",
+      "job_type_inference_reason": "",
+      "sampling_no": "4",
+      "workplace": "生产车间",
+      "position": "针车工",
+      "people_per_shift": "1",
+      "workstation_count": "1",
+      "workstation_count_source": "设备表运行数：针车共1台",
+      "job_type": "固定",
+      "target": "针车工位",
+      "project": "噪声",
+      "limit_type": "/",
+      "exposure_type": "①",
+      "sampling_mode": "定点",
+      "time_type": "短时间",
+      "collector": "直读",
+      "device": "多功能声级计AWA5688",
+      "flow_rate": "/",
+      "points_per_day": "1",
+      "times_per_day": "1",
+      "days": "1",
+      "sampling_time": "/",
+      "representative_time": "8h"
+    }
+  ],
+  "missing_fields": [],
+  "survey_tables": {
+    "basic_info": [],
+    "materials": [
+      {
+        "name": "蓝光胶水",
+        "annual_use": "10桶",
+        "physical_state": "液态",
+        "components": "见挥发性有机组份定性结果",
+        "workplace": "生产车间",
+        "position": "成型工"
+      },
+      {
+        "name": "布料",
+        "annual_use": "2000米",
+        "physical_state": "固态",
+        "components": "/",
+        "workplace": "生产车间",
+        "position": "各工种"
+      }
+    ],
+    "products": [
+      {
+        "name": "休闲鞋",
+        "annual_output": "1万双",
+        "physical_state": "固态",
+        "packaging": "箱式"
+      }
+    ],
+    "equipment": [
+      {
+        "name": "裁床",
+        "model": "/",
+        "total_count": "2",
+        "running_count": "1",
+        "workplace": "生产车间",
+        "position": "裁床工",
+        "layout": "1.机群式布局"
+      },
+      {
+        "name": "针车",
+        "model": "/",
+        "total_count": "16",
+        "running_count": "1",
+        "workplace": "生产车间",
+        "position": "针车工",
+        "layout": "1.机群式布局"
+      },
+      {
+        "name": "成型生产线",
+        "model": "/",
+        "total_count": "1",
+        "running_count": "1",
+        "workplace": "生产车间",
+        "position": "成型工",
+        "layout": "3.直线型生产线布局"
+      }
+    ],
+    "protection_facilities": [
+      {
+        "workplace": "生产车间",
+        "target": "各工位",
+        "name": "管道送风系统",
+        "type": "防暑降温",
+        "total_count": "1",
+        "running_count": "1",
+        "notes": ""
+      }
+    ],
+    "ppe": [
+      {
+        "classification": "/",
+        "category": "/",
+        "manufacturer": "/",
+        "model": "/",
+        "workplace": "/",
+        "position": "/",
+        "replacement_cycle": "/",
+        "wearing_status": "/",
+        "notes": ""
+      }
+    ],
+    "overall_exposure": [
+      [
+        "生产车间",
+        "裁床工",
+        "白班制",
+        "1",
+        "1",
+        "8:00-12:00,13:30-17:30（8,6,48）",
+        "固定作业",
+        "裁床工位，操作裁床",
+        "噪声",
+        "设备",
+        "①",
+        "8.00",
+        "6.00",
+        "48.00",
+        "蓝李生"
+      ],
+      [
+        "生产车间",
+        "针车工",
+        "白班制",
+        "1",
+        "1",
+        "8:00-12:00,13:30-17:30（8,6,48）",
+        "固定作业",
+        "针车工位，操作针车",
+        "噪声",
+        "设备",
+        "①",
+        "8.00",
+        "6.00",
+        "48.00",
+        "张雪梅"
+      ],
+      [
+        "生产车间",
+        "成型工",
+        "白班制",
+        "1",
+        "1",
+        "8:00-12:00,13:30-17:30（8,6,48）",
+        "固定作业",
+        "成型工位，成型",
+        "蓝光胶水（取样分析）、噪声",
+        "设备、原辅料",
+        "①",
+        "8.00",
+        "6.00",
+        "48.00",
+        "苏泽坚"
+      ],
+      [
+        "生产车间",
+        "包装工",
+        "白班制",
+        "1",
+        "1",
+        "8:00-12:00,13:30-17:30（8,6,48）",
+        "固定作业",
+        "包装工位，手工包装",
+        "无",
+        "无",
+        "①",
+        "8.00",
+        "6.00",
+        "48.00",
+        "李绮雯"
+      ],
+      [
+        "办公室",
+        "办公人员",
+        "白班制",
+        "1",
+        "1",
+        "8:00-12:00,13:30-17:30（8,6,48）",
+        "固定作业",
+        "办公室办公",
+        "无",
+        "无",
+        "①",
+        "8.00",
+        "6.00",
+        "48.00",
+        "谢鹏"
+      ]
+    ],
+    "detail_exposure": [],
+    "attachments": []
+  },
+  "inference_notes": [],
+  "component_analysis": {
+    "samples": [
+      {
+        "sample_name": "蓝光胶水",
+        "sample_no": "2025H5-01",
+        "workplace": "生产车间",
+        "position": "成型工",
+        "target": "成型工位",
+        "components": [
+          {
+            "name": "乙酸甲酯",
+            "cas_no": "79-20-9",
+            "percentage": "5.97"
+          },
+          {
+            "name": "正丁醛",
+            "cas_no": "123-72-8",
+            "percentage": "24.78"
+          },
+          {
+            "name": "甲苯",
+            "cas_no": "108-88-3",
+            "percentage": "10.99"
+          },
+          {
+            "name": "其他烃类化合物",
+            "cas_no": "—",
+            "percentage": "40.76"
+          }
+        ]
+      }
+    ]
+  }
+}
