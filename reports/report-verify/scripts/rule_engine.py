@@ -426,86 +426,61 @@ def verify(documents: dict[str, Any], rules: list[dict[str, Any]], comment_docum
 
 
 def render_markdown(payload: dict[str, Any], title: str) -> str:
+    summary = payload["summary"]
+    summary_text = "，".join(
+        f"{key} {summary.get(key, 0)}"
+        for key in ("通过", "不通过", "待人工核验", "来源数据错误", "无核验要求", "不核验")
+    )
     lines = [
         f"# {title}",
         "",
-        f"总体结论：**{payload['overall_status']}**",
-        "",
-        "以下内容已经列出完成处理所需的信息，无需再返回原文档查找批注位置。",
-        "",
-        "## 核验汇总",
-        "",
-        "| 结果 | 数量 |",
-        "|---|---:|",
+        f"**结论：{payload['overall_status']}**（{summary_text}）",
     ]
-    for key in ("通过", "不通过", "待人工核验", "来源数据错误", "无核验要求", "不核验"):
-        lines.append(f"| {key} | {payload['summary'].get(key, 0)} |")
     formula_errors = payload.get("source_formula_errors", [])
     error_names = {"#REF!": "公式引用无效", "#NUM!": "数值计算错误"}
-    error_counts = Counter(error_names.get(str(item.get("value", "")), "其他公式错误") for item in formula_errors)
-    error_text = "，".join(f"{name} {count} 个" for name, count in sorted(error_counts.items())) or "无"
-    lines.extend(["", f"来源文件公式异常：**{len(formula_errors)} 个**（{error_text}）。"])
     errors_by_sheet: dict[tuple[str, str], Counter[str]] = {}
     for error in formula_errors:
         source_file = str(error.get("source_file", "未注明来源文件"))
         sheet = str(error.get("sheet", "未知工作表"))
         label = error_names.get(str(error.get("value", "")), "其他公式错误")
         errors_by_sheet.setdefault((source_file, sheet), Counter())[label] += 1
+    formula_details_by_file: dict[str, list[str]] = {}
     for (source_file, sheet), counts in sorted(errors_by_sheet.items()):
         details = "，".join(f"{name} {count} 个" for name, count in sorted(counts.items()))
-        lines.append(f"- {source_file}，工作表“{sheet}”：{details}")
-    lines.append("")
-    lines.extend(["", "## 问题明细", ""])
+        formula_details_by_file.setdefault(source_file, []).append(f"{sheet}：{details}")
+    if formula_errors:
+        formula_details = "；".join(
+            f"{source_file}（{'，'.join(details)}）"
+            for source_file, details in formula_details_by_file.items()
+        )
+        lines.extend(["", f"**来源公式异常：{len(formula_errors)} 个**：{formula_details}"])
+    lines.extend(["", "## 待处理项", ""])
     for item in payload["results"]:
         if item["status"] in {"通过", "不核验"}:
             continue
+        comment_number = item.get("comment_number") or item["comment_id"] + 1
+        basis = item.get("basis", [])
+        basis_text = "；".join(
+            f"{value.get('file', '未注明文件')} / {value.get('location', '未注明位置')}"
+            for value in basis
+        ) or "未提供核验依据"
+        check_method = item["message"] if item["status"] == "无核验要求" else item["rule"]
         lines.extend(
             [
-                f"### 问题 {item.get('issue_number', item['comment_id'] + 1)}：{item['status']}",
+                f"### {item.get('issue_number', item['comment_id'] + 1)}. [{item['status']}] 第 {comment_number} 条批注 · 内部规则：`{item.get('rule_key', 'missing_rule')}`",
                 "",
-                f"- 对应报告批注序号：第 {item.get('comment_number') or item['comment_id'] + 1} 条",
-                f"- 批注意见：{item['comment'] or '批注内容为空'}",
-                f"- 检测报告位置：{item['report_location']}",
-                f"- 核验说明：{item['rule']}",
-                f"- 核验结论：{item['message']}（内部规则标识：`{item.get('rule_key', 'missing_rule')}`）",
-                f"- 问题来源：{item['problem_origin']}",
+                f"- **位置**：{item['report_location']}",
+                f"- **原因**：{item['problem_origin']}",
+                f"- **依据**：{basis_text}",
+                f"- **核对方法**：{check_method}",
             ]
         )
-        basis = item.get("basis", [])
-        if basis:
-            lines.append("- 核验依据：")
-            for value in basis:
-                location = value.get("location", "未注明原始资料位置")
-                explanation = value.get("explanation", "")
-                detail = f"{value.get('file', '未注明文件')}，{location}"
-                if explanation:
-                    detail += f"；{explanation}"
-                lines.append(f"  - {detail}")
-        else:
-            lines.append("- 核验依据：规则配置中未注明依据文件和原始资料位置，需要补充后才能复核。")
         evidence = item.get("evidence", {})
         missing = evidence.get("missing") if isinstance(evidence, dict) else None
         if missing:
-            lines.append("- 发现的具体差异：")
-            for value in missing:
-                lines.append(f"  - {value}")
+            lines.append(f"- **具体差异**：{'；'.join(str(value) for value in missing)}")
         errors = evidence.get("errors") if isinstance(evidence, dict) else None
         if errors:
-            lines.append("- 计算或判定错误：")
-            for value in errors:
-                lines.append(f"  - {value}")
-        if item["status"] in {"不通过", "来源数据错误"} and isinstance(evidence, dict):
-            actual = evidence.get("actual")
-            expected = evidence.get("expected")
-            if isinstance(actual, list) and actual:
-                lines.append(f"- {evidence.get('actual_label', '来源文件中的内容')}：")
-                for value in actual:
-                    rendered = " / ".join(str(cell).replace("\n", "") for cell in value if str(cell).strip()) if isinstance(value, list) else str(value)
-                    lines.append(f"  - {rendered}")
-            if isinstance(expected, list) and expected:
-                lines.append(f"- {evidence.get('expected_label', '报告中的内容')}：")
-                for value in expected:
-                    rendered = " / ".join(str(cell).replace("\n", "") for cell in value if str(cell).strip()) if isinstance(value, list) else str(value)
-                    lines.append(f"  - {rendered}")
+            lines.append(f"- **计算错误**：{'；'.join(str(value) for value in errors)}")
         lines.append("")
     return "\n".join(lines)

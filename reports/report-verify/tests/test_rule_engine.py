@@ -68,13 +68,42 @@ def test_markdown_issue_is_self_contained():
 
     markdown = render_markdown(payload, "核验结果")
 
-    assert "问题 1：待人工核验" in markdown
-    assert "对应报告批注序号：第 4 条" in markdown
-    assert "内部规则标识：`date_check`" in markdown
-    assert "检测报告位置：封面日期" in markdown
-    assert "报告中的相关内容" not in markdown
-    assert "原始表.pdf，首页日期栏；仅有调查日期" in markdown
-    assert "问题来源：来源未提供日期" in markdown
+    assert "### 1. [待人工核验] 第 4 条批注 · 内部规则：`date_check`" in markdown
+    assert "**位置**：封面日期" in markdown
+    assert "**原因**：来源未提供日期" in markdown
+    assert "**依据**：原始表.pdf / 首页日期栏" in markdown
+    assert "**核对方法**：核验说明" in markdown
+    assert markdown.count("内部规则") == 1
+    assert "仅有调查日期" not in markdown
+
+
+def test_markdown_lists_only_specific_differences_not_full_datasets():
+    payload = {
+        "overall_status": "核验未通过",
+        "summary": {"通过": 0, "不通过": 1},
+        "results": [{
+            "comment_id": 0,
+            "comment_number": 1,
+            "issue_number": 1,
+            "status": "不通过",
+            "rule": "逐项对照来源表和报告表。",
+            "message": "存在差异",
+            "report_location": "表1",
+            "problem_origin": "报告漏填岗位。",
+            "basis": [{"file": "调查表.pdf", "location": "岗位表"}],
+            "evidence": {
+                "missing": ["岗位A", "岗位B"],
+                "actual": [["不应展开的来源完整数据"]],
+                "expected": [["不应展开的报告完整数据"]],
+            },
+        }],
+    }
+
+    markdown = render_markdown(payload, "核验结果")
+
+    assert "**具体差异**：岗位A；岗位B" in markdown
+    assert "不应展开的来源完整数据" not in markdown
+    assert "不应展开的报告完整数据" not in markdown
 
 
 def test_issue_numbers_are_contiguous_when_passing_results_are_hidden():

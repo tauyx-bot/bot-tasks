@@ -1,8 +1,8 @@
 {
   "name": "hongmei-2026",
   "report_title": "鸿美职业病危害因素检测报告核验结果",
-  "input_root": "../../data/hongmei",
-  "output_dir": "../../output/hongmei",
+  "input_root": "../data/hongmei",
+  "output_dir": "../output/hongmei",
   "comment_document": "target",
   "documents": {
     "target": {"path": "鸿美职业病危害因素检测报告.docx", "extractor": "docx", "comments": true, "json": "target_report.json"},
